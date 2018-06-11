@@ -47,6 +47,18 @@ def test_incremental_basic(scheduler, xy_classification):
         assert_estimator_equal(clf.estimator, est2, exclude=['loss_function_'])
 
 
+def test_attrs(scheduler, xy_classification):
+    X, y = xy_classification
+    with scheduler() as (s, [a, b]):
+        clf = Incremental(SGDClassifier(random_state=0, warm_start=True))
+        assert clf.random_state == 0
+        assert clf.warm_start
+
+        clf2 = Incremental(SGDClassifier(), random_state=0, warm_start=True)
+        assert clf.estimator.random_state == 0
+        assert clf.estimator.warm_start
+
+
 def test_in_gridsearch(scheduler, xy_classification):
     X, y = xy_classification
     with scheduler() as (s, [a, b]):
@@ -65,7 +77,5 @@ def test_estimator_param_raises():
         def fit(self, X):
             return self
 
-    clf = Incremental(Dummy(estimator=1))
-
     with pytest.raises(ValueError, match='used by both'):
-        clf.get_params()
+        clf = Incremental(Dummy(estimator=1))
