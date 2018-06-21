@@ -5,7 +5,7 @@ on the underlying estimators being used.
 """
 from ._search import GridSearchCV, RandomizedSearchCV, compute_n_splits, check_cv
 from ._split import ShuffleSplit, train_test_split
-from ._hyperband import Hyperband
+from ._hyperband import HyperbandCV
 
 
 __all__ = [
@@ -15,5 +15,5 @@ __all__ = [
     "train_test_split",
     "compute_n_splits",
     "check_cv",
-    'Hyperband',
+    'HyperbandCV',
 ]
