@@ -8,10 +8,12 @@ from numbers import Integral
 from timeit import default_timer as tic
 
 import dask
+
 import dask.array as da
 import dask.dataframe as dd
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator
 import sklearn.utils.extmath as skm
 import sklearn.utils.validation as sk_validation
 from dask import delayed
@@ -313,9 +315,26 @@ def _num_samples(X):
     return result
 
 
-__all__ = [
-    "assert_estimator_equal",
-    "check_array",
-    "check_random_state",
-    "check_chunks",
-]
+class ConstantFunction(BaseEstimator):
+    def __init__(self, value=0, **kwargs):
+        self.value = value
+        super(BaseEstimator, self).__init__(**kwargs)
+
+    def _fn(self):
+        return self.value
+
+    def partial_fit(self, *args, **kwargs):
+        return self
+
+    def score(self, *args, **kwargs):
+        return self._fn()
+
+    def fit(self, *args):
+        return self
+
+
+__all__ = ["assert_estimator_equal",
+           "check_array",
+           "check_random_state",
+           "check_chunks",
+           "ConstantFunction"]
