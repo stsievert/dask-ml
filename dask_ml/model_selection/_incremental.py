@@ -2,14 +2,14 @@ from __future__ import division
 
 from copy import deepcopy
 
-from sklearn.base import clone
-from sklearn.utils import check_random_state
-from tornado import gen
-
 import dask
 import dask.array as da
-from dask.distributed import as_completed, default_client, Future
+from dask.distributed import Future, as_completed, default_client
 from distributed.utils import log_errors
+from tornado import gen
+
+from sklearn.base import clone
+from sklearn.utils import check_random_state
 
 
 def _partial_fit(model_and_meta, X, y, fit_params):
@@ -38,7 +38,7 @@ def _partial_fit(model_and_meta, X, y, fit_params):
         model.partial_fit(X, y, **(fit_params or {}))
 
         meta = dict(meta)
-        meta['time_step'] += 1
+        meta["time_step"] += 1
 
         return model, meta
 
@@ -59,7 +59,7 @@ def _create_model(model, ident, **params):
     """ Create a model by cloning and then setting params """
     with log_errors(pdb=True):
         model = clone(model).set_params(**params)
-        return model, {'ident': ident, 'params': params, 'time_step': -1}
+        return model, {"ident": ident, "params": params, "time_step": -1}
 
 
 @gen.coroutine
@@ -105,10 +105,10 @@ def _fit(
 
     # Convert to batches of delayed objects of numpy arrays
     X_train = X_train.to_delayed()
-    if hasattr(X_train, 'squeeze'):
+    if hasattr(X_train, "squeeze"):
         X_train = X_train.squeeze()
     y_train = y_train.to_delayed()
-    if hasattr(y_train, 'squeeze'):
+    if hasattr(y_train, "squeeze"):
         y_train = y_train.squeeze()
     X_train, y_train = dask.optimize(X_train.tolist(), y_train.tolist())
 
@@ -166,16 +166,15 @@ def _fit(
         future, meta = yield seq.__anext__()
         if future.cancelled():
             continue
-        ident = meta['ident']
+        ident = meta["ident"]
 
         info[ident].append(meta)
         history.append(meta)
 
         # Evolve the model one more step
         model = models[ident]
-        X_future, y_future = get_futures(meta['time_step'] + 1)
-        model = client.submit(_partial_fit, model, X_future, y_future,
-                              fit_params)
+        X_future, y_future = get_futures(meta["time_step"] + 1)
+        model = client.submit(_partial_fit, model, X_future, y_future, fit_params)
         speculative[ident] = model
 
         # Have we finished a full set of models?
@@ -194,7 +193,7 @@ def _fit(
                 break
 
             for ident, k in instructions.items():
-                start = info[ident][-1]['time_step'] + 1
+                start = info[ident][-1]["time_step"] + 1
                 if k:
                     if ident in speculative:
                         model = speculative.pop(ident)
@@ -203,7 +202,9 @@ def _fit(
                         model = models[ident]
                     for i in range(k):
                         X_future, y_future = get_futures(start + i)
-                        model = client.submit(_partial_fit, model, X_future, y_future, fit_params)
+                        model = client.submit(
+                            _partial_fit, model, X_future, y_future, fit_params
+                        )
                     score = client.submit(_score, model, X_test, y_test, scorer)
                     models[ident] = model
                     scores[ident] = score
