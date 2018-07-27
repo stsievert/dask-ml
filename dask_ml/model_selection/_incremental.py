@@ -43,15 +43,16 @@ def _partial_fit(model_and_meta, X, y, fit_params):
         return model, meta
 
 
-def _score(model_and_meta, X, y, scorer):
+def _score(model_and_meta, X, y, scorer, call=True):
     model, meta = model_and_meta
-    if scorer:
-        score = scorer(model, X, y)
-    else:
-        score = model.score(X, y)
+    if call:
+        if scorer:
+            score = scorer(model, X, y)
+        else:
+            score = model.score(X, y)
 
-    meta = dict(meta)
-    meta.update(score=score)
+        meta = dict(meta)
+        meta.update(score=score)
     return meta
 
 
@@ -153,7 +154,7 @@ def _fit(
     X_future, y_future = get_futures(0)
     for ident, model in models.items():
         model = client.submit(_partial_fit, model, X_future, y_future, fit_params)
-        score = client.submit(_score, model, X_test, y_test, scorer)
+        score = client.submit(_score, model, X_test, y_test, scorer, call=False)
         models[ident] = model
         scores[ident] = score
 
@@ -161,6 +162,7 @@ def _fit(
     speculative = dict()  # models that we might or might not want to keep
     history = []
     number_to_complete = len(models)
+    all_info = {k: [] for k in models}
 
     # async for future, result in seq:
     while not seq.is_empty():
@@ -170,6 +172,7 @@ def _fit(
         ident = meta["model_id"]
 
         info[ident].append(meta)
+        all_info[ident].append(meta)
         history.append(meta)
 
         # Evolve the model one more step
@@ -188,6 +191,7 @@ def _fit(
             for ident in bad:
                 del models[ident]
                 del scores[ident]
+                del info[ident]
 
             if not any(instructions.values()):
                 break
@@ -215,7 +219,7 @@ def _fit(
 
             speculative.clear()
 
-    raise gen.Return((info, models, history))
+    raise gen.Return((all_info, models, history))
 
 
 def fit(*args, **kwargs):
