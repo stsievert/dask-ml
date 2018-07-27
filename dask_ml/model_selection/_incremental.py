@@ -182,7 +182,7 @@ def _fit(
         finished_jobs[ident] = meta['num_partial_fit_calls']
 
         # Have we finished a full set of models?
-        if finished_jobs == jobs_to_complete:
+        if number_to_complete == jobs_to_complete:
             instructions = update(info)
 
             bad = set(models) - set(instructions)
@@ -191,7 +191,6 @@ def _fit(
             for ident in bad:
                 del models[ident]
                 del scores[ident]
-                del info[ident]
 
             if not any(instructions.values()):
                 break
@@ -215,7 +214,7 @@ def _fit(
 
                     seq.add(score)
 
-            jobs_to_complete = {k: v for k, v in instructions.items() if v}
+            jobs_to_complete = len([v for k, v in instructions.items() if v])
 
             speculative.clear()
 

@@ -65,7 +65,7 @@ def test_partial_fit_doesnt_mutate_inputs():
         "iterations": 0,
         "mean_copy_time": 0,
         "mean_fit_time": 0,
-        "partial_fit_calls": 1,
+        "num_partial_fit_calls": 1,
     }
     model = SGDClassifier(tol=1e-3)
     model.partial_fit(X[: n // 2], y[: n // 2], classes=np.unique(y))
@@ -73,7 +73,7 @@ def test_partial_fit_doesnt_mutate_inputs():
         (model, meta), X[n // 2 :], y[n // 2 :], fit_params={"classes": np.unique(y)}
     )
     assert meta != new_meta
-    assert new_meta["iterations"] == 1
+    assert new_meta["num_partial_fit_calls"] == 1
     assert not np.allclose(model.coef_, new_model.coef_)
     assert model.t_ < new_model.t_
 
@@ -126,9 +126,9 @@ def test_explicit(c, s, a, b):
     model, meta = models[0]
 
     assert meta["params"] == {"alpha": 0.1}
-    assert meta["time_step"] == 6
+    assert meta["num_partial_fit_calls"] == 6
     assert len(models) == len(info) == 1
-    assert meta["time_step"] == history[-1]["time_step"]
+    assert meta["num_partial_fit_calls"] == history[-1]["num_partial_fit_calls"]
 
     while s.tasks or c.futures:  # all data clears out
         yield gen.sleep(0.01)
