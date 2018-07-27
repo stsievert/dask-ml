@@ -12,7 +12,7 @@ from sklearn.base import clone
 from sklearn.utils import check_random_state
 
 
-def _partial_fit(model_and_meta, X, y, fit_params):
+def _partial_fit(model_and_meta, X, y, fit_params, call=True):
     """
     Call partial_fit on a classifiers with training data X and y
 
@@ -23,6 +23,8 @@ def _partial_fit(model_and_meta, X, y, fit_params):
         Training data
     fit_params : dict
         Extra keyword arguments to pass to partial_fit
+    call : bool
+        Should partial_fit actually be called?
 
     Returns
     -------
@@ -33,25 +35,26 @@ def _partial_fit(model_and_meta, X, y, fit_params):
     """
     with log_errors(pdb=True):
         model, meta = model_and_meta
-
-        model = deepcopy(model)
-        model.partial_fit(X, y, **(fit_params or {}))
+        if call:
+            model = deepcopy(model)
+            model.partial_fit(X, y, **(fit_params or {}))
 
         meta = dict(meta)
-        meta["time_step"] += 1
+        meta["partial_fit_calls"] += 1
 
         return model, meta
 
 
-def _score(model_and_meta, X, y, scorer):
+def _score(model_and_meta, X, y, scorer, call=True):
     model, meta = model_and_meta
-    if scorer:
-        score = scorer(model, X, y)
-    else:
-        score = model.score(X, y)
+    if call:
+        if scorer:
+            score = scorer(model, X, y)
+        else:
+            score = model.score(X, y)
 
-    meta = dict(meta)
-    meta.update(score=score)
+        meta = dict(meta)
+        meta.update(score=score)
     return meta
 
 
@@ -59,7 +62,7 @@ def _create_model(model, ident, **params):
     """ Create a model by cloning and then setting params """
     with log_errors(pdb=True):
         model = clone(model).set_params(**params)
-        return model, {"ident": ident, "params": params, "time_step": -1}
+        return model, {"model_id": ident, "params": params, "partial_fit_calls": -1}
 
 
 @gen.coroutine
@@ -117,7 +120,7 @@ def _fit(
     seen = {}
     tokens = {}
 
-    def get_futures(time_step):
+    def get_futures(partial_fit_calls):
         """ Policy to get training data futures
 
         Currently we compute once, and then keep in memory.
@@ -126,12 +129,12 @@ def _fit(
         access to training data.
         """
         # Shuffle blocks going forward to get uniform-but-random access
-        while time_step >= len(order):
+        while partial_fit_calls >= len(order):
             L = list(range(len(X_train)))
             rng.shuffle(L)
             order.extend(L)
 
-        j = order[time_step]
+        j = order[partial_fit_calls]
 
         if j in seen:
             x_key, y_key = seen[j]
@@ -151,8 +154,10 @@ def _fit(
     # Submit initial partial_fit and score computations on first batch of data
     X_future, y_future = get_futures(0)
     for ident, model in models.items():
-        model = client.submit(_partial_fit, model, X_future, y_future, fit_params)
-        score = client.submit(_score, model, X_test, y_test, scorer)
+        model = client.submit(
+            _partial_fit, model, X_future, y_future, fit_params, call=False
+        )
+        score = client.submit(_score, model, X_test, y_test, scorer, call=False)
         models[ident] = model
         scores[ident] = score
 
@@ -166,14 +171,14 @@ def _fit(
         future, meta = yield seq.__anext__()
         if future.cancelled():
             continue
-        ident = meta["ident"]
+        ident = meta["model_id"]
 
         info[ident].append(meta)
         history.append(meta)
 
         # Evolve the model one more step
         model = models[ident]
-        X_future, y_future = get_futures(meta["time_step"] + 1)
+        X_future, y_future = get_futures(meta["partial_fit_calls"] + 1)
         model = client.submit(_partial_fit, model, X_future, y_future, fit_params)
         speculative[ident] = model
 
@@ -193,7 +198,7 @@ def _fit(
                 break
 
             for ident, k in instructions.items():
-                start = info[ident][-1]["time_step"] + 1
+                start = info[ident][-1]["partial_fit_calls"] + 1
                 if k:
                     if ident in speculative:
                         model = speculative.pop(ident)
@@ -211,7 +216,7 @@ def _fit(
 
                     seq.add(score)
 
-            number_to_complete = len([v for v in instructions.values() if v])
+            number_to_complete = len([v for k, v in instructions.items() if v])
 
             speculative.clear()
 

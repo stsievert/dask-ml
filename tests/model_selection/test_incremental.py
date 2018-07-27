@@ -49,7 +49,7 @@ def test_basic(c, s, a, b):
 
     assert len(history) > 200
 
-    groups = toolz.groupby("time_step", history)
+    groups = toolz.groupby("partial_fit_calls", history)
     assert len(groups[0]) > len(groups[1]) > len(groups[2]) > len(groups[max(groups)])
     assert max(groups) > 10
 
@@ -86,7 +86,7 @@ def test_explicit(c, s, a, b):
 
     def update(scores):
         """ Progress through predefined updates, checking along the way """
-        ts = scores[0][-1]["time_step"]
+        ts = scores[0][-1]["partial_fit_calls"]
         if ts == 0:
             assert len(scores) == len(params)
             assert len(scores[0]) == 1
@@ -126,9 +126,9 @@ def test_explicit(c, s, a, b):
     model, meta = models[0]
 
     assert meta["params"] == {"alpha": 0.1}
-    assert meta["time_step"] == 6
+    assert meta["partial_fit_calls"] == 6
     assert len(models) == len(info) == 1
-    assert meta["time_step"] == history[-1]["time_step"]
+    assert meta["partial_fit_calls"] == history[-1]["partial_fit_calls"]
 
     while s.tasks or c.futures:  # all data clears out
         yield gen.sleep(0.01)
