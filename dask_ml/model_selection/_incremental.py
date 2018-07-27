@@ -38,7 +38,7 @@ def _partial_fit(model_and_meta, X, y, fit_params):
         model.partial_fit(X, y, **(fit_params or {}))
 
         meta = dict(meta)
-        meta["time_step"] += 1
+        meta["num_partial_fit_calls"] += 1
 
         return model, meta
 
@@ -59,7 +59,8 @@ def _create_model(model, ident, **params):
     """ Create a model by cloning and then setting params """
     with log_errors(pdb=True):
         model = clone(model).set_params(**params)
-        return model, {"ident": ident, "params": params, "time_step": -1}
+        return model, {"model_id": ident, "params": params,
+                       "num_partial_fit_calls": -1}
 
 
 @gen.coroutine
@@ -117,7 +118,7 @@ def _fit(
     seen = {}
     tokens = {}
 
-    def get_futures(time_step):
+    def get_futures(num_partial_fit_calls):
         """ Policy to get training data futures
 
         Currently we compute once, and then keep in memory.
@@ -126,12 +127,12 @@ def _fit(
         access to training data.
         """
         # Shuffle blocks going forward to get uniform-but-random access
-        while time_step >= len(order):
+        while num_partial_fit_calls >= len(order):
             L = list(range(len(X_train)))
             rng.shuffle(L)
             order.extend(L)
 
-        j = order[time_step]
+        j = order[num_partial_fit_calls]
 
         if j in seen:
             x_key, y_key = seen[j]
@@ -158,27 +159,30 @@ def _fit(
 
     seq = as_completed(scores.values(), with_results=True)
     speculative = dict()  # models that we might or might not want to keep
+    jobs_to_complete = dict()
     history = []
     number_to_complete = len(models)
 
     # async for future, result in seq:
+    finished_jobs = {}
     while not seq.is_empty():
         future, meta = yield seq.__anext__()
         if future.cancelled():
             continue
-        ident = meta["ident"]
+        ident = meta["model_id"]
 
         info[ident].append(meta)
         history.append(meta)
 
         # Evolve the model one more step
         model = models[ident]
-        X_future, y_future = get_futures(meta["time_step"] + 1)
+        X_future, y_future = get_futures(meta["num_partial_fit_calls"] + 1)
         model = client.submit(_partial_fit, model, X_future, y_future, fit_params)
         speculative[ident] = model
+        finished_jobs[ident] = meta['num_partial_fit_calls']
 
         # Have we finished a full set of models?
-        if len(speculative) == number_to_complete:
+        if finished_jobs == jobs_to_complete:
             instructions = update(info)
 
             bad = set(models) - set(instructions)
@@ -193,7 +197,7 @@ def _fit(
                 break
 
             for ident, k in instructions.items():
-                start = info[ident][-1]["time_step"] + 1
+                start = info[ident][-1]["num_partial_fit_calls"] + 1
                 if k:
                     if ident in speculative:
                         model = speculative.pop(ident)
@@ -211,7 +215,7 @@ def _fit(
 
                     seq.add(score)
 
-            number_to_complete = len([v for v in instructions.values() if v])
+            jobs_to_complete = {k: v for k, v in instructions.items() if v}
 
             speculative.clear()
 
