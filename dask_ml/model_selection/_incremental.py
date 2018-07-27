@@ -159,12 +159,10 @@ def _fit(
 
     seq = as_completed(scores.values(), with_results=True)
     speculative = dict()  # models that we might or might not want to keep
-    jobs_to_complete = dict()
     history = []
     number_to_complete = len(models)
 
     # async for future, result in seq:
-    finished_jobs = {}
     while not seq.is_empty():
         future, meta = yield seq.__anext__()
         if future.cancelled():
@@ -179,10 +177,9 @@ def _fit(
         X_future, y_future = get_futures(meta["num_partial_fit_calls"] + 1)
         model = client.submit(_partial_fit, model, X_future, y_future, fit_params)
         speculative[ident] = model
-        finished_jobs[ident] = meta['num_partial_fit_calls']
 
         # Have we finished a full set of models?
-        if number_to_complete == jobs_to_complete:
+        if len(speculative) == number_to_complete:
             instructions = update(info)
 
             bad = set(models) - set(instructions)
@@ -214,7 +211,7 @@ def _fit(
 
                     seq.add(score)
 
-            jobs_to_complete = len([v for k, v in instructions.items() if v])
+            number_to_complete = len([v for k, v in instructions.items() if v])
 
             speculative.clear()
 
