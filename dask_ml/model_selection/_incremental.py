@@ -74,7 +74,7 @@ def _fit(
     y_train,
     X_test,
     y_test,
-    get_partial_fit_calls,
+    additional_partial_fit_calls,
     fit_params=None,
     scorer=None,
     random_state=None,
@@ -182,7 +182,7 @@ def _fit(
 
         # Have we finished a full set of models?
         if len(speculative) == number_to_complete:
-            instructions = get_partial_fit_calls(info)
+            instructions = additional_partial_fit_calls(info)
 
             bad = set(models) - set(instructions)
 
@@ -247,15 +247,20 @@ def fit(*args, **kwargs):
         Numpy array or small dask array.  Should fit in memory.
     y_test : Array
         Numpy array or small dask array.  Should fit in memory.
-    start : int
-        Number of parameters to start with
+    additional_partial_fit_calls : callable
+        Function to determine how many more times to call ``model.partial_fit``
+        before calling this function again.
+
+        * Input: {model_id:  [{'partial_fit_calls': 0, 'params': {...},
+                               'model_id': model_id}
+                  for model_id in range(len(params))]]
+        * Output: {model_id: additional_partial_fit_calls
+                   for model_id in [...]}
+
     fit_params : dict
         Extra parameters to give to partial_fit
     random_state :
     scorer :
-    target : callable
-        A function that takes the start value and the current time step and
-        returns the number of desired models at that time step
 
     Examples
     --------
