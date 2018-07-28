@@ -73,7 +73,7 @@ def _fit(
     y_train,
     X_test,
     y_test,
-    update,
+    adapt,
     fit_params=None,
     scorer=None,
     random_state=None,
@@ -184,7 +184,7 @@ def _fit(
 
         # Have we finished a full set of models?
         if len(speculative) == number_to_complete:
-            instructions = update(info)
+            instructions = adapt(info)
 
             bad = set(models) - set(instructions)
 
@@ -216,7 +216,7 @@ def _fit(
 
                     seq.add(score)
 
-            number_to_complete = len([v for k, v in instructions.items() if v])
+            number_to_complete = len([v for v in instructions.values() if v])
 
             speculative.clear()
 
