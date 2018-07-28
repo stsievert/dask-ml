@@ -10,9 +10,10 @@ from tornado import gen
 
 from sklearn.base import clone
 from sklearn.utils import check_random_state
+from sklearn.exceptions import NotFittedError
 
 
-def _partial_fit(model_and_meta, X, y, fit_params, call=True):
+def _partial_fit(model_and_meta, X, y, fit_params):
     """
     Call partial_fit on a classifiers with training data X and y
 
@@ -35,9 +36,8 @@ def _partial_fit(model_and_meta, X, y, fit_params, call=True):
     """
     with log_errors(pdb=True):
         model, meta = model_and_meta
-        if call:
-            model = deepcopy(model)
-            model.partial_fit(X, y, **(fit_params or {}))
+        model = deepcopy(model)
+        model.partial_fit(X, y, **(fit_params or {}))
 
         meta = dict(meta)
         meta["partial_fit_calls"] += 1
@@ -45,16 +45,17 @@ def _partial_fit(model_and_meta, X, y, fit_params, call=True):
         return model, meta
 
 
-def _score(model_and_meta, X, y, scorer, call=True):
+def _score(model_and_meta, X, y, scorer):
     model, meta = model_and_meta
-    if call:
+    try:
         if scorer:
             score = scorer(model, X, y)
         else:
             score = model.score(X, y)
-
         meta = dict(meta)
         meta.update(score=score)
+    except NotFittedError:
+        assert meta['partial_fit_calls'] == 0
     return meta
 
 
@@ -154,10 +155,7 @@ def _fit(
     # Submit initial partial_fit and score computations on first batch of data
     X_future, y_future = get_futures(0)
     for ident, model in models.items():
-        model = client.submit(
-            _partial_fit, model, X_future, y_future, fit_params, call=False
-        )
-        score = client.submit(_score, model, X_test, y_test, scorer, call=False)
+        score = client.submit(_score, model, X_test, y_test, scorer)
         models[ident] = model
         scores[ident] = score
 
