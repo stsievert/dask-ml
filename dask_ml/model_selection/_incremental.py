@@ -74,7 +74,7 @@ def _fit(
     y_train,
     X_test,
     y_test,
-    adapt,
+    get_partial_fit_calls,
     fit_params=None,
     scorer=None,
     random_state=None,
@@ -182,7 +182,7 @@ def _fit(
 
         # Have we finished a full set of models?
         if len(speculative) == number_to_complete:
-            instructions = adapt(info)
+            instructions = get_partial_fit_calls(info)
 
             bad = set(models) - set(instructions)
 
