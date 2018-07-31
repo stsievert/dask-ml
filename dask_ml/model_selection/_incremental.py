@@ -52,10 +52,11 @@ def _score(model_and_meta, X, y, scorer):
             score = scorer(model, X, y)
         else:
             score = model.score(X, y)
-        meta = dict(meta)
-        meta.update(score=score)
     except NotFittedError:
         assert meta['partial_fit_calls'] == 0
+        score = 0
+    meta = dict(meta)
+    meta.update(score=score)
     return meta
 
 
