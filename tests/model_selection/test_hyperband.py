@@ -11,7 +11,6 @@ from tornado import gen
 from dask_ml.datasets import make_classification
 from dask_ml.model_selection import HyperbandCV
 from dask_ml.wrappers import Incremental
-from dask_ml.model_selection._hyperband import _partial_fit
 from dask_ml.utils import ConstantFunction
 from distributed.metrics import time
 

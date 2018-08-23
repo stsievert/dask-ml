@@ -48,65 +48,6 @@ def _get_hyperband_params(R, eta=3):
     return list(map(int, N)), R, brackets
 
 
-def _partial_fit(model_and_meta, X, y, meta=None, fit_params=None):
-    """
-    Call partial_fit on a classifiers with X and y
-
-    Arguments
-    ---------
-    model_and_meta : tuple, (model: any, meta: dict)
-        model needs to support partial_fit. meta is assumed to have keys
-        ``mean_copy_time, iterations, partial_fit_calls, mean_fit_time``.
-        partial_fit will be called on the model until
-        ``meta['iterations'] >= meta['partial_fit_calls']``
-    X, y : np.ndarray, np.ndarray
-        Training data
-    meta : dict
-        If present, replace ``model_and_meta[1]`` with this object
-    fit_params : dict
-        Keyword args to pass to partial_fit
-
-    Returns
-    -------
-    model : any
-        The model that has been fit.
-    meta : dict
-        A new dictionary with updated information.
-
-    This function does not modify any item in place.
-
-    """
-    if fit_params is None:
-        fit_params = {}
-    start = time()
-    model = deepcopy(model_and_meta[0])
-    if meta is None:
-        meta = deepcopy(model_and_meta[1])
-    else:
-        meta = deepcopy(meta)
-    meta["mean_copy_time"] += time() - start
-    while meta["iterations"] < meta["partial_fit_calls"]:
-        model.partial_fit(X, y, **fit_params)
-        meta["iterations"] += 1
-    meta["mean_fit_time"] += time() - start
-    return model, meta
-
-
-def _score(model_and_meta, x, y, scorer, start=0):
-    model, meta = model_and_meta
-    score = scorer(model, x, y)
-
-    score_start = time()
-    meta = deepcopy(meta)
-    meta["mean_copy_time"] += time() - score_start
-    meta.update(score=score)
-    assert meta["iterations"] > 0
-    meta["mean_score_time"] += time() - score_start
-    meta["mean_test_score"] = score
-    meta["time_scored"] = time() - start
-    return meta
-
-
 def _to_promote(result, completed_jobs, eta=3, asynchronous=True):
     """
     Arguments
@@ -161,168 +102,6 @@ def _to_promote(result, completed_jobs, eta=3, asynchronous=True):
             result = _promote_job(result)
             return [result]
         return []
-
-
-def _create_model(model, params, random_state=42):
-    model = clone(model).set_params(**params)
-    if "random_state" in model.get_params():
-        model.set_params(random_state=random_state)
-    return model, None  # right now no meta information
-
-
-def _model_id(s, n_i):
-    return "bracket={s}-{n_i}".format(s=s, n_i=n_i)
-
-
-@gen.coroutine
-def _hyperband(
-    model,
-    params,
-    X,
-    y,
-    max_iter=81,
-    eta=3,
-    fit_params=None,
-    random_state=42,
-    test_size=0.15,
-    scorer=None,
-    asynchronous=True,
-):
-    if fit_params is None:
-        fit_params = {}
-    client = default_client()
-    rng = check_random_state(random_state)
-    N, R, brackets = _get_hyperband_params(max_iter, eta=eta)
-    params = [
-        ParameterSampler(params, 1, random_state=rng.randint(sum(N)))
-        for _ in range(sum(N))
-    ]
-    params = iter([list(p)[0] for p in params])
-
-    params = {
-        _model_id(s, n_i): next(params)
-        for s, n, r in zip(brackets, N, R)
-        for n_i in range(n)
-    }
-    model_futures = {
-        _model_id(s, n_i): client.submit(
-            _create_model,
-            model,
-            params[_model_id(s, n_i)],
-            random_state=rng.randint(100 * sum(N)),
-        )
-        for s, n, r in zip(brackets, N, R)
-        for n_i in range(n)
-    }
-
-    # lets assume everything in fit_params is small and make it concrete
-    fit_params = yield client.compute(fit_params)
-
-    r = train_test_split(X, y, test_size=test_size, random_state=rng)
-    X_train, X_test, y_train, y_test = r
-    if isinstance(X, da.Array):
-        X_train = futures_of(X_train.persist())
-        X_test = client.compute(X_test)
-    else:
-        X_train, X_test = yield client.scatter([X_train, X_test])
-    if isinstance(y, da.Array):
-        y_train = futures_of(y_train.persist())
-        y_test = client.compute(y_test)
-    else:
-        y_train, y_test = yield client.scatter([y_train, y_test])
-
-    info = {
-        s: [
-            {
-                "partial_fit_calls": r,
-                "bracket": "bracket={}".format(s),
-                "num_models": n,
-                "bracket_iter": 0.0,
-                "iterations": 0.0,
-                "model_id": _model_id(s, n_i),
-                "mean_test_score": 0.0,
-                "mean_fit_time": 0.0,
-                "mean_score_time": 0,
-                "mean_copy_time": 0.0,
-                "mean_train_score": None,
-                "std_fit_time": 0.0,
-                "std_score_time": 0.0,
-                "std_test_score": 0.0,
-                "std_train_score": None,
-                "params": params[_model_id(s, n_i)],
-            }
-            for n_i in range(n)
-        ]
-        for s, n, r in zip(brackets, N, R)
-    }
-
-    idx = {
-        (i, j): rng.choice(len(X_train))
-        for i, metas in enumerate(info.values())
-        for j, meta in enumerate(metas)
-    }
-
-    hyperband_start = time()
-    model_meta_futures = {
-        meta["model_id"]: client.submit(
-            _partial_fit,
-            model_futures[meta["model_id"]],
-            X_train[idx[(i, j)]],
-            y_train[idx[(i, j)]],
-            meta=meta,
-            fit_params=fit_params,
-        )
-        for i, bracket_metas in enumerate(info.values())
-        for j, meta in enumerate(bracket_metas)
-    }
-
-    assert set(model_meta_futures.keys()) == set(model_futures.keys())
-
-    score_futures = [
-        client.submit(_score, model_meta_future, X_test, y_test, scorer,
-                      start=hyperband_start)
-        for _id, model_meta_future in model_meta_futures.items()
-    ]
-
-    completed_jobs = {}
-    seq = as_completed(score_futures, with_results=True)
-    history = []
-
-    while not seq.is_empty():  # async for future, result in seq:
-        future, result = yield seq.__anext__()
-        history += [result]
-
-        completed_jobs[result["model_id"]] = result
-        promoted = _to_promote(
-            result, completed_jobs.values(), eta=eta, asynchronous=asynchronous
-        )
-        for job in promoted:
-            i = rng.choice(len(X_train))
-
-            # This block prevents communication of the model
-            model_id = job["model_id"]
-            model_meta_future = model_meta_futures[model_id]
-            model_meta_future = client.submit(
-                _partial_fit,
-                model_meta_future,
-                X_train[i],
-                y_train[i],
-                meta=job,
-                fit_params=fit_params,
-            )
-            model_meta_futures[model_id] = model_meta_future
-
-            score_future = client.submit(
-                _score, model_meta_future, X_test, y_test, scorer,
-                start=hyperband_start
-            )
-            seq.add(score_future)
-
-    assert set(completed_jobs) == set(model_meta_futures)
-    raise gen.Return((params,
-                      model_meta_futures,
-                      history,
-                      list(completed_jobs.values())))
 
 
 class HyperbandCV(DaskBaseSearchCV):
@@ -494,7 +273,6 @@ class HyperbandCV(DaskBaseSearchCV):
         model,
         params,
         max_iter=300,
-        batch_size=0.2,
         eta=3,
         asynchronous=True,
         random_state=42,
@@ -508,7 +286,6 @@ class HyperbandCV(DaskBaseSearchCV):
         self.test_size = test_size
         self.random_state = random_state
         self.asynchronous = asynchronous
-        self.batch_size = batch_size
 
         self.best_score = None
         self.best_params = None
