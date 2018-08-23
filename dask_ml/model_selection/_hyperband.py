@@ -307,41 +307,46 @@ class HyperbandCV(DaskBaseSearchCV):
         N, R, brackets = _get_hyperband_params(self.max_iter, eta=self.eta)
         SHAs = [_SHA(n, r, limit=b + 1) for n, r, b in zip(N, R, brackets)]
         param_lists = [list(ParameterSampler(self.params, n)) for n in N]
+        if isinstance(X, np.ndarray):
+            X = da.from_array(X, chunks=X.shape)
+        if isinstance(y, np.ndarray):
+            y = da.from_array(y, chunks=y.shape)
         X_train, X_test, y_train, y_test = train_test_split(X, y)
 
         # TODO: run this for-loop in parallel
-        # TODO: integrate with info and scores (create best_model_, etc)
         hists = {}
+        params = {}
+        models = {}
         for bracket, SHA, param_list in zip(brackets, SHAs, param_lists):
-            info, scores, hist = _incremental_fit(
-                self.model, param_list, X_train, y_train, X_test, y_test, SHA.fit
+            # first argument is the informatino on the best model; no need with
+            # cv_results_
+            _, b_models, hist = _incremental_fit(
+                self.model, param_list, X_train, y_train, X_test, y_test, SHA.fit,
+                fit_params=fit_params,
             )
             hists[bracket] = hist
+            params[bracket] = param_list
+            models[bracket] = b_models
 
-        self.history_ = {}
-        meta_ = []
-        for bracket in brackets:
-            hist = hists[bracket]
-            info_hist = {'{}-{}'.format(bracket, h['model_id']): [] for h in hist}
-            for h in hist:
-                key = '{}-{}'.format(bracket, h['model_id'])
-                info_hist[key] += [{'bracket': bracket, **h}]
-            hist = info_hist
-            self.history_.update(hist)
+        # Recreating the scores for each model
+        key = lambda bracket, ident: '{}-{}'.format(bracket, ident)
+        cv_results, best_idx, best_model_id = _get_cv_results(hists, params, key=key)
+        best_model = [model_future
+                      for bracket, bracket_models in models.items()
+                      for model_id, model_future in bracket_models.items()
+                      if best_model_id == key(bracket, model_id)]
+        assert len(best_model) == 1
+        self.best_estimator_ = best_model[0].result()[0]
+        self.n_splits_ = 1
+        self.multimetric_ = False
 
-            calls = {k: max(hi['partial_fit_calls'] for hi in h)
-                     for k, h in hist.items()}
-            iters = {hi['partial_fit_calls'] for h in hist.values() for hi in h}
-            meta_ += [{'bracket': 'bracket=' + str(bracket),
-                       'iters': sorted(list(iters)),
-                       'models': len(hist),
-                       'partial_fit_calls': sum(calls.values())}]
-        self.meta_ = {'models': sum(m['models'] for m in meta_),
-                      'partial_fit_calls': sum(m['partial_fit_calls'] for m in meta_),
-                      'brackets': meta_}
+        meta, history = _get_meta(hists, brackets, key=key)
+        self.history_ = history
 
+        self.meta_ = {'models': sum(m['models'] for m in meta),
+                      'partial_fit_calls': sum(m['partial_fit_calls'] for m in meta),
+                      'brackets': meta}
         return self
-        return default_client().sync(self._fit, X, y, **fit_params)
 
     @gen.coroutine
     def _fit(self, X, y, **fit_params):
@@ -425,21 +430,54 @@ class HyperbandCV(DaskBaseSearchCV):
         return info
 
 
-def _get_cv_results(history, params):
-    scores = [h["score"] for h in history]
-    best_idx = int(np.argmax(scores))
-    keys = set(toolz.merge(history).keys())
-    for unused in ["bracket", "iterations", "num_models", "bracket_iter", "score"]:
-        keys.discard(unused)
-    cv_results = {k: [h[k] for h in history] for k in keys}
+def _get_meta(hists, brackets, key=None):
+    if key is None:
+        key = lambda bracket, ident: '{}-{}'.format(bracket, ident)
+    meta_ = []
+    history_ = {}
+    for bracket in brackets:
+        hist = hists[bracket]
 
-    params = [params[model_id] for model_id in cv_results["model_id"]]
-    cv_results["params"] = params
-    params = {"param_" + k: [param[k] for param in params] for k in params[0].keys()}
-    ranks = np.argsort(scores)[::-1]
-    cv_results["rank_test_score"] = ranks.tolist()
-    cv_results.update(params)
-    return cv_results, best_idx
+        info_hist = {key(bracket, h['model_id']): [] for h in hist}
+        for h in hist:
+            info_hist[key(bracket, h['model_id'])] += [{'bracket': bracket, **h}]
+        hist = info_hist
+        history_.update(hist)
+
+        calls = {k: max(hi['partial_fit_calls'] for hi in h)
+                 for k, h in hist.items()}
+        iters = {hi['partial_fit_calls'] for h in hist.values() for hi in h}
+        meta_ += [{'bracket': 'bracket=' + str(bracket),
+                   'iters': sorted(list(iters)),
+                   'models': len(hist),
+                   'partial_fit_calls': sum(calls.values())}]
+    return meta_, history_
+
+def _get_cv_results(hists, params, key=None):
+    if key is None:
+        key = lambda bracket, ident: '{}-{}'.format(bracket, ident)
+    score_calls = {key(bracket, h['model_id']): (-np.inf, -1, param, h['model_id'])
+                   for bracket, hist in hists.items()
+                   for h, param in zip(hist, params[bracket])}
+    for bracket, hist in hists.items():
+        for h in hist:
+            k = key(bracket, h['model_id'])
+            score, calls, param, ident = score_calls[k]
+            if score < h['score'] and calls < h['partial_fit_calls']:
+                score_calls[k] = (h['score'], h['partial_fit_calls'], param, k)
+    scores = {k: v[0] for k, v in score_calls.items()}
+    scores = [v[0] for v in score_calls.values()]
+    params = [v[2] for v in score_calls.values()]
+    idents = [v[3] for v in score_calls.values()]
+    best_idx = int(np.argmax(scores))
+    best_ident = idents[best_idx]
+    ranks = np.argsort(-np.array(scores)) + 1
+    cv_results = {'params': params, 'scores': scores, 'rank_test_score': ranks}
+    flat_params = {
+        "param_" + k: [param[k] for param in params] for k in params[0].keys()
+    }
+    cv_results.update(flat_params)
+    return cv_results, best_idx, best_ident
 
 
 def _hyperband_paper_alg(R, eta=3):
