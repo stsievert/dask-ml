@@ -5,7 +5,7 @@ from copy import deepcopy
 from sklearn.base import clone
 from sklearn.utils import check_random_state
 from tornado import gen
-from time import time
+from distributed.metrics import time
 
 import dask
 import dask.array as da
