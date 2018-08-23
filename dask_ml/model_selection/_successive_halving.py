@@ -86,7 +86,9 @@ class _SHA:
         self.steps += 1
 
         if self.steps > self.limit or (self.limit is None and len(best) in {0, 1}):
-            return {0: 0}
+            max_score = max(v[-1]['score'] for v in info.values())
+            best_ids = {k for k, v in info.items() if v[-1]['score'] == max_score}
+            return {ident: 0 for ident in best_ids}
 
         pf_calls = {k: info[k][-1]['partial_fit_calls'] for k in best}
         addtl_pf_calls = {k: r_i - pf_calls[k]
