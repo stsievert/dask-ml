@@ -1,27 +1,19 @@
 from __future__ import division
 
-from copy import deepcopy
 import logging
 import math
 
 import numpy as np
-from sklearn.base import clone
 from sklearn.model_selection import ParameterSampler
-from sklearn.utils import check_random_state
 from sklearn.metrics.scorer import check_scoring
-from tornado import gen
 import toolz
 
 import dask.array as da
-from dask.distributed import as_completed, default_client, futures_of
-from distributed.metrics import time
 
 from ._split import train_test_split
 from ._search import DaskBaseSearchCV
 from ._incremental import fit as _incremental_fit
 from ._successive_halving import _SHA
-
-
 
 logger = logging.getLogger(__name__)
 
