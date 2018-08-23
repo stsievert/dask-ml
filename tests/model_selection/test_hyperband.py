@@ -79,34 +79,12 @@ def test_sklearn(array_type, library, loop):
                 search.cv_results_["mean_test_score"]
             )
 
-            info_plain = search.fit_metadata()
-            info_train = search.fit_metadata(meta=search.meta_)
-            # NOTE: this currently fails with sklearn and dask-ml models (not
-            # test models). some of the bracket partial_fit_calls are off by
-            # about 20%.
-            #  assert info_plain['brackets'] == info_train['brackets']
-            #  assert info_train == info_plain
-            for b1, b2 in zip(info_train["_brackets"],
-                              info_plain["_brackets"]):
-                for key, v1 in b1.items():
-                    v2 = b2[key]
-                    if key == "num_partial_fit_calls":
-                        diff = np.abs(v1 - v2) / v1
-                        assert diff < 0.23
-                    else:
-                        assert v1 == v2
-
-            assert info_train["num_models"] == info_plain["num_models"]
-            part_fit_key = "num_partial_fit_calls"
-            diff = info_train[part_fit_key] - info_plain[part_fit_key]
-            diff /= info_plain[part_fit_key]
-            assert np.abs(diff) < 0.06
-
 
 @pytest.mark.parametrize("library", ["sklearn", "dask-ml"])  # noqa: F811
 def test_scoring_param(loop, library):
     with cluster() as (s, [a, b]):
         with Client(s["address"], loop=loop):
+            assert library in {"dask-ml", "sklearn"}
             max_iter = 9
             X, y = make_classification(
                 n_samples=100, n_features=20, random_state=42, chunks=20
@@ -143,6 +121,7 @@ def test_scoring_param(loop, library):
             assert alg1.score(X, y) != alg2.score(X, y)
 
 
+@pytest.mark.skip(reason="asynchronous not implemented")
 def test_async_keyword(loop):  # noqa: F811
     with cluster() as (s, [a, b]):
         with Client(s["address"], loop=loop):
@@ -169,6 +148,7 @@ def test_async_keyword(loop):  # noqa: F811
             assert alg0.score(X, y) == alg1.score(X, y)
 
 
+@pytest.mark.skip(reason="asynchronous not implemented")
 @gen_cluster(client=True)
 def test_sklearn_async(c, s, a, b):
     max_iter = 27
@@ -202,35 +182,8 @@ def test_sklearn_async(c, s, a, b):
     assert len(set(search.cv_results_["model_id"])) == 49
 
 
-def test_partial_fit_copy():
-    # Tests copying of models by testing on one model and seeing if it carries
-    # through Hyperband
-    n, d = 100, 20
-    X, y = make_classification(
-        n_samples=n, n_features=d, random_state=42, chunks=(n, d)
-    )
-    X = X.compute()
-    y = y.compute()
-    meta = {
-        "iterations": 0,
-        "mean_copy_time": 0,
-        "mean_fit_time": 0,
-        "partial_fit_calls": 1,
-    }
-    model = SGDClassifier(tol=1e-3)
-    model.partial_fit(X[: n // 2], y[: n // 2], classes=np.unique(y))
-    new_model, new_meta = _partial_fit(
-        (model, meta), X[n // 2:], y[n // 2:],
-        fit_params={"classes": np.unique(y)}
-    )
-    assert meta != new_meta
-    assert new_meta["iterations"] == 1
-    assert not np.allclose(model.coef_, new_model.coef_)
-    assert model.t_ < new_model.t_
-
-
-@pytest.mark.parametrize("max_iter", [27, 81])  # noqa: F811
-def test_meta_computation(loop, max_iter):
+@pytest.mark.parametrize("max_iter", [27])#, 81])  # noqa: F811
+def test_hyperband_mirrors_paper(loop, max_iter):
     with cluster() as (s, [a, b]):
         with Client(s["address"], loop=loop):
 

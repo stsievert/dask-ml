@@ -86,7 +86,8 @@ class _SHA:
         self.steps += 1
 
         if len(best) in {0, 1} and self.steps > self.limit:
-            return {0: 0}
+            best_id = max(info, key=lambda k: info[k][-1]['score'])
+            return {best_id: 0}
 
         pf_calls = {k: info[k][-1]['partial_fit_calls'] for k in best}
         addtl_pf_calls = {k: r_i - pf_calls[k]
