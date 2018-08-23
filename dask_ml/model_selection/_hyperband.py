@@ -18,6 +18,9 @@ from distributed.metrics import time
 
 from ._split import train_test_split
 from ._search import DaskBaseSearchCV
+from ._incremental import fit as _incremental_fit
+from ._successive_halving import _SHA
+
 
 
 logger = logging.getLogger(__name__)
@@ -73,8 +76,8 @@ def _to_promote(result, completed_jobs, eta=3, asynchronous=True):
     bracket_models = [
         r
         for r in completed_jobs
-        if r["bracket_iter"] == result["bracket_iter"] and
-        r["bracket"] == result["bracket"]
+        if r["bracket_iter"] == result["bracket_iter"]
+        and r["bracket"] == result["bracket"]
     ]
     to_keep = len(bracket_models) // eta
 
@@ -409,21 +412,13 @@ def _get_cv_results(history, params):
     scores = [h["score"] for h in history]
     best_idx = int(np.argmax(scores))
     keys = set(toolz.merge(history).keys())
-    for unused in [
-        "bracket",
-        "iterations",
-        "num_models",
-        "bracket_iter",
-        "score",
-    ]:
+    for unused in ["bracket", "iterations", "num_models", "bracket_iter", "score"]:
         keys.discard(unused)
     cv_results = {k: [h[k] for h in history] for k in keys}
 
     params = [params[model_id] for model_id in cv_results["model_id"]]
     cv_results["params"] = params
-    params = {
-        "param_" + k: [param[k] for param in params] for k in params[0].keys()
-    }
+    params = {"param_" + k: [param[k] for param in params] for k in params[0].keys()}
     ranks = np.argsort(scores)[::-1]
     cv_results["rank_test_score"] = ranks.tolist()
     cv_results.update(params)
