@@ -194,9 +194,10 @@ class HyperbandCV(DaskBaseSearchCV):
         * ``param_value``
         * ``mean_copy_time``
 
-    meta_ : dict
-        Information about every model that was trained. Can be used as input to
-        :func:`~dask_ml.model_selection.HyperbandCV.fit_metadata`.
+    metadata_ : dict
+        Information about every model that was trained. This variable can also
+        be obtained without fitting through
+        :func:`~dask_ml.model_selection.HyperbandCV.metadata`.
     history_ : list of dicts
         Information about every model after it is scored. Most models will be
         in here more than once because poor performing models are "killed" off
@@ -345,11 +346,12 @@ class HyperbandCV(DaskBaseSearchCV):
         meta, history = _get_meta(hists, brackets, key=key)
         self.history_ = history
 
-        self.meta_ = {'models': sum(m['models'] for m in meta),
-                      'partial_fit_calls': sum(m['partial_fit_calls'] for m in meta),
-                      'brackets': meta}
+        self.metadata_ = {'models': sum(m['models'] for m in meta),
+                          'partial_fit_calls': sum(m['partial_fit_calls'] for m in meta),
+                          'brackets': meta}
         return self
 
+    def metadata(self):
         """Get information about how much computation is required for
         :func:`~dask_ml.model_selection.HyperbandCV.fit`. This can be called
         before or after  :func:`~dask_ml.model_selection.HyperbandCV.fit`.

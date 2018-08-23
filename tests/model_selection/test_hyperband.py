@@ -144,8 +144,8 @@ def test_async_keyword(loop):  # noqa: F811
             )
             alg1.fit(X, y)
 
-            info0 = alg0.fit_metadata(meta=alg0.meta_)
-            info1 = alg1.fit_metadata(meta=alg1.meta_)
+            info0 = alg0.metadata(meta=alg0.metadata_)
+            info1 = alg1.metadata(meta=alg1.metadata_)
             assert info0["num_models"] == info1["num_models"]
             assert alg0.score(X, y) == alg1.score(X, y)
 
@@ -197,10 +197,7 @@ def test_hyperband_mirrors_paper(loop, max_iter):
                 asynchronous=False
             )
             alg.fit(X, y)
-
-            paper_info = alg.fit_metadata()
-            actual_info = alg.meta_
-            assert paper_info == actual_info
+            assert alg.metadata() == alg.metadata_
 
 
 def test_integration(loop):  # noqa: F811
