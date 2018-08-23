@@ -300,20 +300,29 @@ class HyperbandCV(DaskBaseSearchCV):
             # first argument is the informatino on the best model; no need with
             # cv_results_
             _, b_models, hist = _incremental_fit(
-                self.model, param_list, X_train, y_train, X_test, y_test, SHA.fit,
-                fit_params=fit_params, scorer=self.scorer_
+                self.model,
+                param_list,
+                X_train,
+                y_train,
+                X_test,
+                y_test,
+                SHA.fit,
+                fit_params=fit_params,
+                scorer=self.scorer_,
             )
             hists[bracket] = hist
             params[bracket] = param_list
             models[bracket] = b_models
 
         # Recreating the scores for each model
-        key = lambda bracket, ident: 'bracket={}-{}'.format(bracket, ident)
+        key = lambda bracket, ident: "bracket={}-{}".format(bracket, ident)
         cv_results, best_idx, best_model_id = _get_cv_results(hists, params, key=key)
-        best_model = [model_future
-                      for bracket, bracket_models in models.items()
-                      for model_id, model_future in bracket_models.items()
-                      if best_model_id == key(bracket, model_id)]
+        best_model = [
+            model_future
+            for bracket, bracket_models in models.items()
+            for model_id, model_future in bracket_models.items()
+            if best_model_id == key(bracket, model_id)
+        ]
         assert len(best_model) == 1
         self.cv_results_ = cv_results
         self.best_index_ = best_idx
@@ -324,9 +333,11 @@ class HyperbandCV(DaskBaseSearchCV):
         meta, history = _get_meta(hists, brackets, key=key)
         self.history_ = history
 
-        self.metadata_ = {'models': sum(m['models'] for m in meta),
-                          'partial_fit_calls': sum(m['partial_fit_calls'] for m in meta),
-                          'brackets': meta}
+        self.metadata_ = {
+            "models": sum(m["models"] for m in meta),
+            "partial_fit_calls": sum(m["partial_fit_calls"] for m in meta),
+            "brackets": meta,
+        }
         return self
 
     def metadata(self):
@@ -371,53 +382,60 @@ class HyperbandCV(DaskBaseSearchCV):
 
 def _get_meta(hists, brackets, key=None):
     if key is None:
-        key = lambda bracket, ident: 'bracket={}-{}'.format(bracket, ident)
+        key = lambda bracket, ident: "bracket={}-{}".format(bracket, ident)
     meta_ = []
     history_ = {}
     for bracket in brackets:
         hist = hists[bracket]
 
-        info_hist = {key(bracket, h['model_id']): [] for h in hist}
+        info_hist = {key(bracket, h["model_id"]): [] for h in hist}
         for h in hist:
-            info_hist[key(bracket, h['model_id'])] += [{'bracket': bracket, **h}]
+            info_hist[key(bracket, h["model_id"])] += [dict(bracket=bracket, **h)]
         hist = info_hist
         history_.update(hist)
 
-        calls = {k: max(hi['partial_fit_calls'] for hi in h)
-                 for k, h in hist.items()}
-        iters = {hi['partial_fit_calls'] for h in hist.values() for hi in h}
-        meta_ += [{'bracket': 'bracket=' + str(bracket),
-                   'iters': sorted(list(iters)),
-                   'models': len(hist),
-                   'partial_fit_calls': sum(calls.values())}]
+        calls = {k: max(hi["partial_fit_calls"] for hi in h) for k, h in hist.items()}
+        iters = {hi["partial_fit_calls"] for h in hist.values() for hi in h}
+        meta_ += [
+            {
+                "bracket": "bracket=" + str(bracket),
+                "iters": sorted(list(iters)),
+                "models": len(hist),
+                "partial_fit_calls": sum(calls.values()),
+            }
+        ]
     return meta_, history_
 
 
 def _get_cv_results(hists, params, key=None):
     if key is None:
-        key = lambda bracket, ident: 'bracket={}-{}'.format(bracket, ident)
-    info = {key(bracket, h['model_id']): {'bracket': bracket,
-                                          'score': None,
-                                          'partial_fit_calls': -np.inf,
-                                          'fit_times': [],
-                                          'score_times': [],
-                                          'model_id': h['model_id'],
-                                          'params': param}
-            for bracket, hist in hists.items()
-            for h, param in zip(hist, params[bracket])}
+        key = lambda bracket, ident: "bracket={}-{}".format(bracket, ident)
+    info = {
+        key(bracket, h["model_id"]): {
+            "bracket": bracket,
+            "score": None,
+            "partial_fit_calls": -np.inf,
+            "fit_times": [],
+            "score_times": [],
+            "model_id": h["model_id"],
+            "params": param,
+        }
+        for bracket, hist in hists.items()
+        for h, param in zip(hist, params[bracket])
+    }
 
     for bracket, hist in hists.items():
         for h in hist:
-            k = key(bracket, h['model_id'])
-            if info[k]['partial_fit_calls'] < h['partial_fit_calls']:
-                info[k]['partial_fit_calls'] = h['partial_fit_calls']
-                info[k]['score'] = h['score']
-                info[k]['fit_times'] += [h['partial_fit_time']]
-                info[k]['score_times'] += [h['score_time']]
+            k = key(bracket, h["model_id"])
+            if info[k]["partial_fit_calls"] < h["partial_fit_calls"]:
+                info[k]["partial_fit_calls"] = h["partial_fit_calls"]
+                info[k]["score"] = h["score"]
+                info[k]["fit_times"] += [h["partial_fit_time"]]
+                info[k]["score_times"] += [h["score_time"]]
 
     info = list(info.values())
-    scores = np.array([v['score'] for v in info])
-    idents = [key(v['bracket'], v['model_id']) for v in info]
+    scores = np.array([v["score"] for v in info])
+    idents = [key(v["bracket"], v["model_id"]) for v in info]
 
     best_idx = int(np.argmax(scores))
     best_ident = idents[best_idx]
@@ -426,16 +444,19 @@ def _get_cv_results(hists, params, key=None):
 
     def get_map(fn, key, list_):
         return np.array([fn(dict_[key]) for dict_ in list_])
-    cv_results = {'params': [v['params'] for v in info],
-                  'test_score': scores,
-                  'mean_test_score': scores,  # for sklearn comptability
-                  'rank_test_score': ranks,
-                  'mean_partial_fit_time': get_map(np.mean, 'fit_times', info),
-                  'std_partial_fit_time': get_map(np.std, 'fit_times', info),
-                  'mean_score_time': get_map(np.mean, 'score_times', info),
-                  'std_score_time': get_map(np.std, 'score_times', info),
-                  'partial_fit_calls': [v['partial_fit_calls'] for v in info],
-                  'model_id': idents}
+
+    cv_results = {
+        "params": [v["params"] for v in info],
+        "test_score": scores,
+        "mean_test_score": scores,  # for sklearn comptability
+        "rank_test_score": ranks,
+        "mean_partial_fit_time": get_map(np.mean, "fit_times", info),
+        "std_partial_fit_time": get_map(np.std, "fit_times", info),
+        "mean_score_time": get_map(np.mean, "score_times", info),
+        "std_score_time": get_map(np.std, "score_times", info),
+        "partial_fit_calls": [v["partial_fit_calls"] for v in info],
+        "model_id": idents,
+    }
     params = sum(params.values(), [])
     all_params = {k for param in params for k in param}
     flat_params = {

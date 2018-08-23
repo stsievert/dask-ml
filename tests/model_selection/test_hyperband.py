@@ -86,8 +86,7 @@ def test_hyperband_mirrors_paper(loop, max_iter=27):
             model = ConstantFunction()
             params = {"value": scipy.stats.uniform(0, 1)}
             alg = HyperbandCV(
-                model, params, max_iter=max_iter, random_state=0,
-                asynchronous=False
+                model, params, max_iter=max_iter, random_state=0, asynchronous=False
             )
             alg.fit(X, y)
             assert alg.metadata() == alg.metadata_
@@ -119,8 +118,7 @@ def test_integration(loop):  # noqa: F811
                 ("param_value", float, None),
             ]:
                 if dtype:
-                    assert all(isinstance(x, dtype)
-                               for x in alg.cv_results_[column])
+                    assert all(isinstance(x, dtype) for x in alg.cv_results_[column])
                 if condition:
                     assert all(condition(x) for x in alg.cv_results_[column])
                 cv_res_keys -= {column}
