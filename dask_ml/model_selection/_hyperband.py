@@ -350,54 +350,6 @@ class HyperbandCV(DaskBaseSearchCV):
                       'brackets': meta}
         return self
 
-    @gen.coroutine
-    def _fit(self, X, y, **fit_params):
-        if isinstance(X, np.ndarray):
-            X = da.from_array(X, chunks=X.shape)
-        if isinstance(y, np.ndarray):
-            y = da.from_array(y, chunks=y.shape)
-        num_samples = sum(y.chunks[0])
-        samples_per_batch = self.batch_size * num_samples
-        X = X.rechunk({0: samples_per_batch})
-        y = y.rechunk({0: samples_per_batch})
-
-        # We always want a concrete scorer, so return_dask_score=False
-        # We want this because we're always scoring NumPy arrays
-        self.scorer_ = check_scoring(self.model, scoring=self.scoring)
-        self.best_score = -np.inf
-        r = yield _hyperband(
-            self.model,
-            self.params,
-            X,
-            y,
-            max_iter=self.max_iter,
-            fit_params=fit_params,
-            eta=self.eta,
-            random_state=self.random_state,
-            test_size=self.test_size,
-            scorer=self.scorer_,
-            asynchronous=self.asynchronous,
-        )
-        params, model_meta_futures, history, meta = r
-
-        self.meta_ = meta
-        self.history_ = history
-
-        cv_res, best_idx = _get_cv_results(meta, params)
-        best_id = cv_res["model_id"][best_idx]
-
-        best_model_and_meta = yield model_meta_futures[best_id]
-        self.best_estimator_ = best_model_and_meta[0]
-
-        self.best_params_ = cv_res['params'][best_idx]
-        self.cv_results_ = cv_res
-        self.best_index_ = best_idx
-        self.n_splits_ = 1  # TODO: increase this! It's hard-coded right now
-        self.multimetric_ = False
-
-        raise gen.Return(self)
-
-    def fit_metadata(self):
         """Get information about how much computation is required for
         :func:`~dask_ml.model_selection.HyperbandCV.fit`. This can be called
         before or after  :func:`~dask_ml.model_selection.HyperbandCV.fit`.
