@@ -5,7 +5,7 @@ from copy import deepcopy
 from sklearn.base import clone
 from sklearn.utils import check_random_state
 from tornado import gen
-from time import time
+from distributed.metrics import time
 
 import dask
 import dask.array as da
@@ -184,6 +184,10 @@ def _fit(
             del info[ident]
 
         if not any(instructions.values()):
+            # BUG TODO: all of the keys in `instructions` need to remain
+            # keys of model at this point
+            #
+            # Simple implementation: comment out deleting of models
             break
 
         _models = {}
