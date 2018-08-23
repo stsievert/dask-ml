@@ -2,17 +2,14 @@ import numpy as np
 import scipy.stats
 from sklearn.linear_model import SGDClassifier
 
-import dask
 import dask.array as da
-from dask.distributed import Client, wait
+from dask.distributed import Client
 from distributed.utils_test import loop, cluster, gen_cluster  # noqa: F401
-from tornado import gen
 
 from dask_ml.datasets import make_classification
 from dask_ml.model_selection import HyperbandCV
 from dask_ml.wrappers import Incremental
 from dask_ml.utils import ConstantFunction
-from distributed.metrics import time
 
 import pytest
 
@@ -81,111 +78,7 @@ def test_sklearn(array_type, library, loop):
             )
 
 
-@pytest.mark.parametrize("library", ["sklearn", "dask-ml"])  # noqa: F811
-def test_scoring_param(loop, library):
-    with cluster() as (s, [a, b]):
-        with Client(s["address"], loop=loop):
-            assert library in {"dask-ml", "sklearn"}
-            max_iter = 9
-            X, y = make_classification(
-                n_samples=100, n_features=20, random_state=42, chunks=20
-            )
-            X, y = dask.persist(X, y)
-            if library == "sklearn":
-                X = X.compute()
-                y = y.compute()
-
-            kwargs = dict(tol=1e-3, penalty="elasticnet", random_state=42)
-
-            model = SGDClassifier(**kwargs)
-            params = {
-                "alpha": np.logspace(-2, 1, num=1000),
-                "l1_ratio": np.linspace(0, 1, num=1000),
-                "average": [True, False],
-            }
-            if library == "dask-ml":
-                model = Incremental(model)
-                params = {'estimator__' + k: v for k, v in params.items()}
-
-            alg1 = HyperbandCV(
-                model, params, max_iter=max_iter, scoring="accuracy",
-                random_state=42
-            )
-            alg1.fit(X, y, classes=da.unique(y))
-
-            alg2 = HyperbandCV(
-                model, params, max_iter=max_iter, scoring="r2", random_state=42
-            )
-            alg2.fit(X, y, classes=da.unique(y))
-
-            assert alg1.scoring != alg2.scoring
-            assert alg1.scorer_ != alg2.scorer_
-            assert alg1.score(X, y) != alg2.score(X, y)
-
-
-@pytest.mark.skip(reason="asynchronous not implemented")
-def test_async_keyword(loop):  # noqa: F811
-    with cluster() as (s, [a, b]):
-        with Client(s["address"], loop=loop):
-            max_iter = 27
-            X, y = make_classification(chunks=20)
-            model = ConstantFunction()
-
-            params = {"value": np.logspace(-2, 1, num=max_iter)}
-            alg0 = HyperbandCV(
-                model, params, asynchronous=False, max_iter=max_iter,
-                random_state=42
-            )
-            alg0.fit(X, y)
-
-            alg1 = HyperbandCV(
-                model, params, asynchronous=True, max_iter=max_iter,
-                random_state=42
-            )
-            alg1.fit(X, y)
-
-            info0 = alg0.metadata(meta=alg0.metadata_)
-            info1 = alg1.metadata(meta=alg1.metadata_)
-            assert info0["num_models"] == info1["num_models"]
-            assert alg0.score(X, y) == alg1.score(X, y)
-
-
-@pytest.mark.skip(reason="asynchronous not implemented")
-@gen_cluster(client=True)
-def test_sklearn_async(c, s, a, b):
-    max_iter = 27
-    chunk_size = 20
-    X, y = make_classification(
-        n_samples=100, n_features=20, random_state=42, chunks=chunk_size
-    )
-    X, y = dask.persist(X, y)
-    yield wait([X, y])
-
-    kwargs = dict(tol=1e-3, penalty="elasticnet", random_state=42)
-
-    model = SGDClassifier(**kwargs)
-
-    params = {
-        "alpha": np.logspace(-2, 1, num=1000),
-        "l1_ratio": np.linspace(0, 1, num=1000),
-        "average": [True, False],
-    }
-    search = HyperbandCV(model, params, max_iter=max_iter, random_state=42)
-    s_tasks = set(s.tasks)
-    c_futures = set(c.futures)
-    yield search._fit(X, y, classes=da.unique(y))
-
-    assert set(c.futures) == c_futures
-    start = time()
-    while set(s.tasks) != s_tasks:
-        yield gen.sleep(0.01)
-        assert time() < start + 5
-
-    assert len(set(search.cv_results_["model_id"])) == 49
-
-
-@pytest.mark.parametrize("max_iter", [27])#, 81])  # noqa: F811
-def test_hyperband_mirrors_paper(loop, max_iter):
+def test_hyperband_mirrors_paper(loop, max_iter=27):
     with cluster() as (s, [a, b]):
         with Client(s["address"], loop=loop):
 
