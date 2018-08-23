@@ -304,6 +304,17 @@ class HyperbandCV(DaskBaseSearchCV):
         **fit_params
             Additional partial fit keyword arguments for the estimator.
         """
+        N, R, brackets = _get_hyperband_params(self.max_iter, eta=self.eta)
+        SHAs = [_SHA(n, r, limit=b + 1) for n, r, b in zip(N, R, brackets)]
+        param_lists = [list(ParameterSampler(self.params, n)) for n in N]
+        X_train, X_test, y_train, y_test = train_test_split(X, y)
+
+        all_info = []
+        for SHA, param_list in zip(SHAs, param_lists):
+            _, _, hist = _incremental_fit(
+                self.model, param_list, X_train, y_train, X_test, y_test, SHA.fit
+            )
+            all_info += hist
         return default_client().sync(self._fit, X, y, **fit_params)
 
     @gen.coroutine
@@ -427,9 +438,7 @@ def _get_cv_results(history, params):
 
 def _hyperband_paper_alg(R, eta=3):
     """
-    Algorithm 1 from the Hyperband paper. Only a slight modification is made,
-    the ``if to_keep <= 1``: if 1 model is left there's no sense in training
-    any further.
+    Algorithm 1 from the Hyperband paper [1]_.
 
     References
     ----------
@@ -444,32 +453,23 @@ def _hyperband_paper_alg(R, eta=3):
     for s in brackets:
         n = int(math.ceil(B / R * eta ** s / (s + 1)))
         r = int(R * eta ** -s)
-
         T = set(range(n))
-        hist = {
-            "num_models": n,
-            "models": {n: 0 for n in range(n)},
-            "iters": [],
-        }
+        hist = {"num_models": n, "models": {n: 0 for n in range(n)}, "iters": []}
         for i in range(s + 1):
             n_i = math.floor(n * eta ** -i)
-            r_i = r * eta ** i
+            r_i = np.round(r * eta ** i).astype(int)
             L = {model: r_i for model in T}
             hist["models"].update(L)
             hist["iters"] += [r_i]
             to_keep = math.floor(n_i / eta)
             T = {model for i, model in enumerate(T) if i < to_keep}
-            if to_keep <= 1:
-                break
-
         hists["bracket={s}".format(s=s)] = hist
-
     info = [
         {
             "bracket": k,
             "num_models": hist["num_models"],
             "num_partial_fit_calls": sum(hist["models"].values()),
-            "iters": set(hist["iters"]),
+            "iters": {int(h) for h in hist["iters"]},
         }
         for k, hist in hists.items()
     ]
