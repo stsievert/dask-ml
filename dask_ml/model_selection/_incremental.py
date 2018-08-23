@@ -33,6 +33,7 @@ def _partial_fit(model_and_meta, X, y, fit_params):
         A new dictionary with updated information.
     """
     with log_errors():
+        start = time()
         model, meta = model_and_meta
 
         if len(X):
@@ -41,11 +42,13 @@ def _partial_fit(model_and_meta, X, y, fit_params):
 
         meta = dict(meta)
         meta['partial_fit_calls'] += 1
+        meta['partial_fit_time'] = time() - start
 
         return model, meta
 
 
 def _score(model_and_meta, X, y, scorer):
+    start = time()
     model, meta = model_and_meta
     if scorer:
         score = scorer(model, X, y)
@@ -53,7 +56,7 @@ def _score(model_and_meta, X, y, scorer):
         score = model.score(X, y)
 
     meta = dict(meta)
-    meta.update(score=score)
+    meta.update(score=score, score_time=time() - start)
     return meta
 
 
@@ -171,7 +174,6 @@ def _fit(
             info[ident].append(meta)
             history.append(meta)
 
-        time_start = time()
         instructions = update(info)
         bad = set(models) - set(instructions)
 
