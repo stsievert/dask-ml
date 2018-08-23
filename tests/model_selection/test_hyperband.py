@@ -53,6 +53,7 @@ def test_sklearn(array_type, library, loop):
             )
             if library == "dask-ml":
                 model = Incremental(model)
+                params = {"estimator__" + k: v for k, v in params.items()}
             elif library == "test":
                 model = ConstantFunction()
                 params = {"value": np.linspace(0, 1, num=1000)}
@@ -75,8 +76,8 @@ def test_sklearn(array_type, library, loop):
             num_fit_models = len(set(search.cv_results_["model_id"]))
             assert num_fit_models == 49
             best_idx = search.best_index_
-            assert search.cv_results_["mean_test_score"][best_idx] == max(
-                search.cv_results_["mean_test_score"]
+            assert search.cv_results_["test_score"][best_idx] == max(
+                search.cv_results_["test_score"]
             )
 
 
@@ -97,14 +98,15 @@ def test_scoring_param(loop, library):
             kwargs = dict(tol=1e-3, penalty="elasticnet", random_state=42)
 
             model = SGDClassifier(**kwargs)
-            if library == "dask-ml":
-                model = Incremental(model)
-
             params = {
                 "alpha": np.logspace(-2, 1, num=1000),
                 "l1_ratio": np.linspace(0, 1, num=1000),
                 "average": [True, False],
             }
+            if library == "dask-ml":
+                model = Incremental(model)
+                params = {'estimator__' + k: v for k, v in params.items()}
+
             alg1 = HyperbandCV(
                 model, params, max_iter=max_iter, scoring="accuracy",
                 random_state=42
@@ -213,27 +215,21 @@ def test_integration(loop):  # noqa: F811
             alg.fit(X, y)
             cv_res_keys = set(alg.cv_results_.keys())
             gt_zero = lambda x: x >= 0
-            is_type = lambda x, dtype: isinstance(x, dtype)
             for column, dtype, condition in [
-                ("rank_test_score", int, None),
-                ("model_id", str, None),
-                ("mean_score_time", float, gt_zero),
-                ("mean_test_score", float, None),
-                ("mean_fit_time", float, gt_zero),
-                ("partial_fit_calls", int, gt_zero),
                 ("params", dict, lambda d: set(d.keys()) == {"value"}),
-                ("param_value", float, None),
-                ("mean_copy_time", float, gt_zero),
-                ("std_test_score", float, gt_zero),
+                ("test_score", float, None),
+                ("mean_test_score", float, None),
+                ("rank_test_score", np.int64, None),
+                ("mean_partial_fit_time", float, gt_zero),
+                ("std_partial_fit_time", float, gt_zero),
+                ("mean_score_time", float, gt_zero),
                 ("std_score_time", float, gt_zero),
-                ("mean_train_score", None, None),
-                ("std_train_score", None, None),
-                ("std_fit_time", float, gt_zero),
-                ("mean_copy_time", float, gt_zero),
-                ("time_scored", float, gt_zero),
+                ("model_id", str, None),
+                ("partial_fit_calls", int, gt_zero),
+                ("param_value", float, None),
             ]:
                 if dtype:
-                    assert all(is_type(x, dtype)
+                    assert all(isinstance(x, dtype)
                                for x in alg.cv_results_[column])
                 if condition:
                     assert all(condition(x) for x in alg.cv_results_[column])

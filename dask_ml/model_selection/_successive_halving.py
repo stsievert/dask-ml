@@ -69,7 +69,7 @@ class _SHA:
             self.steps = 1
             pf_calls = {k: info[k][-1]['partial_fit_calls'] for k in info}
             return self.fit(info)
-        # this ordering is important; typically r_i==1 when steps==0
+        # this ordering is important; typically r_i==1 only when steps==0
         if self.steps == 0:
             # we have r_i - 1 more steps to train to
             self.steps = 1
@@ -85,9 +85,8 @@ class _SHA:
         best = toolz.topk(n_i, info, key=lambda k: info[k][-1]['score'])
         self.steps += 1
 
-        if len(best) in {0, 1} and self.steps > self.limit:
-            best_id = max(info, key=lambda k: info[k][-1]['score'])
-            return {best_id: 0}
+        if self.steps > self.limit or (self.limit is None and len(best) in {0, 1}):
+            return {0: 0}
 
         pf_calls = {k: info[k][-1]['partial_fit_calls'] for k in best}
         addtl_pf_calls = {k: r_i - pf_calls[k]
