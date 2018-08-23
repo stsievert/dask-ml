@@ -330,7 +330,7 @@ class HyperbandCV(DaskBaseSearchCV):
             models[bracket] = b_models
 
         # Recreating the scores for each model
-        key = lambda bracket, ident: '{}-{}'.format(bracket, ident)
+        key = lambda bracket, ident: 'bracket={}-{}'.format(bracket, ident)
         cv_results, best_idx, best_model_id = _get_cv_results(hists, params, key=key)
         best_model = [model_future
                       for bracket, bracket_models in models.items()
@@ -363,9 +363,13 @@ class HyperbandCV(DaskBaseSearchCV):
 
             * ``partial_fit_calls``, the total number of partial fit calls.
             * ``models``, the total number of models created.
+            * ``brackets``, each of which has the same two keys as above.
 
         Notes
         ------
+        This algorithm runs several loops in an "embarassingly parallel"
+        manner. The ``brackets`` key represents each of these loops.
+
         Note that when asynchronous is True and meta is None, the amount of
         computation described by this function is a lower bound: more
         computation will be done if asynchronous is True.
@@ -389,7 +393,7 @@ class HyperbandCV(DaskBaseSearchCV):
 
 def _get_meta(hists, brackets, key=None):
     if key is None:
-        key = lambda bracket, ident: '{}-{}'.format(bracket, ident)
+        key = lambda bracket, ident: 'bracket={}-{}'.format(bracket, ident)
     meta_ = []
     history_ = {}
     for bracket in brackets:
@@ -413,7 +417,7 @@ def _get_meta(hists, brackets, key=None):
 
 def _get_cv_results(hists, params, key=None):
     if key is None:
-        key = lambda bracket, ident: '{}-{}'.format(bracket, ident)
+        key = lambda bracket, ident: 'bracket={}-{}'.format(bracket, ident)
     info = {key(bracket, h['model_id']): {'bracket': bracket,
                                           'score': None,
                                           'partial_fit_calls': -np.inf,
