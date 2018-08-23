@@ -100,10 +100,12 @@ def _to_promote(result, completed_jobs, eta=3, asynchronous=True):
 
 
 class HyperbandCV(DaskBaseSearchCV):
-    """Find the best parameters for a particular model with cross-validation
+    """Find the best parameters for a particular model with an adaptive
+    cross-validation algorithm.
 
-    This algorithm is state-of-the-art and only requires computational budget
-    as input. It does not require a trade-off between "evaluate many
+    This algorithm is performant and only requires computational budget
+    as input (performant := "finds the best parameters with minimal
+    ``partial_fit`` calls). It does not require a trade-off between "evaluate many
     parameters" and "train for a long time" like RandomizedSearchCV. Hyperband
     will find close to the best possible parameters with the given
     computational budget [1]_.*
@@ -123,28 +125,25 @@ class HyperbandCV(DaskBaseSearchCV):
         The maximum number of partial_fit calls to any one model. This should
         be the number of ``partial_fit`` calls required for the model to
         converge.
-    batch_size : float, default=0.2
-        The fraction of the dataset that one partial_fit call will see. At
-        most, ``batch_size * max_iter`` samples will be seen by
-        ``partial_fit``.
     eta : int, default=3
         How aggressive to be in model tuning. It is not recommended to change
         this value, and if changed we recommend ``eta=4``.
         The theory behind Hyperband suggests ``eta=np.e``. Higher
         values imply higher confidence in model selection.
-    asynchronous : bool
-        Controls the adaptive process by estimating which models to train
-        further or making an informed choice by waiting for all jobs to
-        complete.  Having many workers benefits or quick jobs benefits from
-        asynchronous=True, which is what is recommended.
-    random_state : int or np.random.RandomState
-        A random state for this class. Setting this helps enforce determinism.
-    scoring : str or callable
-        The scoring method by which to score different classifiers.
-    test_size : float
+    test_size : float, optional
         Hyperband uses one test set for all example, and this controls the
         size of that test set. It should be a floating point value between 0
         and 1 to represent the number of examples to put into the test set.
+    asynchronous : bool, optional
+        Controls the adaptive process by estimating which models to train
+        further or making an informed choice by waiting for all jobs to
+        complete.  Having many workers benefits or quick jobs benefits from
+        ``asynchronous=True``, which is what is recommended.
+    random_state : int or np.random.RandomState
+        A random state for this class. Setting this helps enforce determinism (but
+        for ``asynchronous=True``, the fitting time and network still add randomness)
+    scoring : str or callable, optional
+        The scoring method by which to score different classifiers.
 
     Examples
     --------
@@ -178,29 +177,22 @@ class HyperbandCV(DaskBaseSearchCV):
         * ``std_fit_time``
         * ``std_score_time``
         * ``mean_test_score``
-        * ``std_test_score``
+        * ``test_score``
         * ``partial_fit_calls``
-        * ``mean_train_score``
-        * ``std_train_score``
         * ``params``
-        * ``param_value``
-        * ``mean_copy_time``
 
     metadata_ : dict
         Information about every model that was trained. This variable can also
         be obtained without fitting through
         :func:`~dask_ml.model_selection.HyperbandCV.metadata`.
     history_ : list of dicts
-        Information about every model after it is scored. Most models will be
-        in here more than once because poor performing models are "killed" off
-        early.
+        Information about every model after every time it is scored.
     best_params_ : dict
         The params that produced the best performing model
     best_estimator_ : any
         The best performing model
     best_index_ : int
-        The index of the best performing classifier to be used in
-        ``cv_results_``.
+        The index of the best performing model to be used in ``cv_results_``.
     n_splits_ : int
         The number of cross-validation splits.
     best_score_ : float
@@ -210,48 +202,42 @@ class HyperbandCV(DaskBaseSearchCV):
 
     Notes
     -----
-    Hyperband is state of the art via an adaptive scheme. Hyperband
-    only spends time on high-performing models, because our goal is to find
-    the highest performing model. This means that it stops training models
-    that perform poorly.
 
+    Hyperband is an adaptive model selection scheme that spends time on
+    high-performing models, because our goal is to find the highest performing
+    model. This means that it stops training models that perform poorly.
+
+    Setting Hyperband parameters
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    To set ``max_iter`` and the chunk size for ``X`` and ``y``, you need to
+    know
+
+    * how many "epochs" or "passes through ``X``" to train the model for
+      (``epochs`` below)
+    * how many parameters to sample (``params_to_sample`` below)
+
+    To determine the chunk size and ``max_iter``,
+
+    1. Set ``frac = epochs / params_to_sample``, where ``frac`` is ``chunks / len(X)``
+    2. Set ``max_iter = params_to_sample``
+
+    The number of parameters to sample will depend on how complex the search
+    space is. If you're tuning many parameters, you'll need to increase
+    ``params_to_sample``.
+
+    Asynchronous keyword
+    ^^^^^^^^^^^^^^^^^^^^
     The asynchronous variant [2]_ is controlled by the ``asynchronous``
     keyword and suited for highly parallel architectures. Architectures with
     little parallism (i.e., few workers) will benefit from
     ``asynchronous=False``.
 
-    At least one model sees ``max_iter * batch_size`` samples, which
-    should be large enough for convergence (or close to it). Often
-    there are hard constraints on ``max_iter * batch_size``
-    (e.g., time or deadline constraints).
-
-    ``max_iter`` is (almost) proportional to the number of parameters
-    evaluated, as well as being the maximum number of times
-    ``partial_fit`` is called for any model.
-    ``batch_size`` is the fraction of the dataset that each ``partial_fit``
-    call sees.
-
-    ``max_iter`` should be set to be reasonable given the problem and
-    parameter search space, but ideally
-    large enough so that early-stopping is beneficial. Higher values will
-    evaluate more parameters. We recommend setting ``max_iter * batch_size``,
-    then using :func:`~dask_ml.model_selection.HyperbandCV.fit_metadata`
-    alongside natural constraints (time or deadline constraints) to determine
-    ``max_iter`` and ``batch_size``.
-
-    The authors of Hyperband use ``max_iter=300`` and ``batch_size=0.25``
-    to tune deep learning models in [1]_. They tune 6 stochastic gradient
-    descent parameters alongside two problem formulation hyperparameters.
-    For :func:`~sklearn.linear_model.SGDClassifier`, examples of "stochastic
-    gradient descent parameters" are ``learning_rate`` and ``eta0``.
-    Examples of "problem formulation hyperparameters" are ``alpha`` and
-    ``l1_ratio`` when ``penalty='elasticnet'``.
-
+    Limitations
+    ^^^^^^^^^^^
     There are some limitations to the `current` implementation of Hyperband:
 
     1. The full dataset is requested to be in distributed memory
     2. The testing dataset must fit in the memory of a single worker
-    3. HyperbandCV does not implement cross validation
 
     References
     ----------
