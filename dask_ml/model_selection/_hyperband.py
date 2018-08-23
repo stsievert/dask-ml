@@ -309,12 +309,38 @@ class HyperbandCV(DaskBaseSearchCV):
         param_lists = [list(ParameterSampler(self.params, n)) for n in N]
         X_train, X_test, y_train, y_test = train_test_split(X, y)
 
-        all_info = []
-        for SHA, param_list in zip(SHAs, param_lists):
-            _, _, hist = _incremental_fit(
+        # TODO: run this for-loop in parallel
+        # TODO: integrate with info and scores (create best_model_, etc)
+        hists = {}
+        for bracket, SHA, param_list in zip(brackets, SHAs, param_lists):
+            info, scores, hist = _incremental_fit(
                 self.model, param_list, X_train, y_train, X_test, y_test, SHA.fit
             )
-            all_info += hist
+            hists[bracket] = hist
+
+        self.history_ = {}
+        meta_ = []
+        for bracket in brackets:
+            hist = hists[bracket]
+            info_hist = {'{}-{}'.format(bracket, h['model_id']): [] for h in hist}
+            for h in hist:
+                key = '{}-{}'.format(bracket, h['model_id'])
+                info_hist[key] += [{'bracket': bracket, **h}]
+            hist = info_hist
+            self.history_.update(hist)
+
+            calls = {k: max(hi['partial_fit_calls'] for hi in h)
+                     for k, h in hist.items()}
+            iters = {hi['partial_fit_calls'] for h in hist.values() for hi in h}
+            meta_ += [{'bracket': 'bracket=' + str(bracket),
+                       'iters': sorted(list(iters)),
+                       'models': len(hist),
+                       'partial_fit_calls': sum(calls.values())}]
+        self.meta_ = {'models': sum(m['models'] for m in meta_),
+                      'partial_fit_calls': sum(m['partial_fit_calls'] for m in meta_),
+                      'brackets': meta_}
+
+        return self
         return default_client().sync(self._fit, X, y, **fit_params)
 
     @gen.coroutine
@@ -363,25 +389,18 @@ class HyperbandCV(DaskBaseSearchCV):
 
         raise gen.Return(self)
 
-    def fit_metadata(self, meta=None):
+    def fit_metadata(self):
         """Get information about how much computation is required for
         :func:`~dask_ml.model_selection.HyperbandCV.fit`. This can be called
         before or after  :func:`~dask_ml.model_selection.HyperbandCV.fit`.
-
-        Parameters
-        ----------
-        meta : dict, optional.
-            Information about the computation that occured. This argument
-            can be ``self.meta_``.
 
         Returns
         -------
         metadata : dict
             Information about the computation performed by ``fit``. Has keys
 
-            * ``num_partial_fit_calls``, which is the total number of
-              partial fit calls.
-            * ``num_models``, which is the total number of models created.
+            * ``partial_fit_calls``, the total number of partial fit calls.
+            * ``models``, the total number of models created.
 
         Notes
         ------
@@ -390,31 +409,18 @@ class HyperbandCV(DaskBaseSearchCV):
         computation will be done if asynchronous is True.
 
         """
-        if meta is None:
-            bracket_info = _hyperband_paper_alg(self.max_iter, eta=self.eta)
-            num_models = sum(b["num_models"] for b in bracket_info)
-        else:
-            brackets = toolz.groupby("bracket", meta)
-            fit_call_key = "partial_fit_calls"
-            bracket_info = [
-                {
-                    "num_models": max(vi["num_models"] for vi in v),
-                    "num_" + fit_call_key: sum(vi[fit_call_key] for vi in v),
-                    "bracket": k,
-                    "iters": {vi[fit_call_key] for vi in v},
-                }
-                for k, v in brackets.items()
-            ]
-            num_models = len(set([r["model_id"] for r in meta]))
+        bracket_info = _hyperband_paper_alg(self.max_iter, eta=self.eta)
+        num_models = sum(b["models"] for b in bracket_info)
         for bracket in bracket_info:
+            bracket["iters"].update({1})
             bracket["iters"] = sorted(list(bracket["iters"]))
-        num_partial_fit = sum(b["num_partial_fit_calls"] for b in bracket_info)
-        bracket_info = sorted(bracket_info, key=lambda x: x["bracket"])
+        num_partial_fit = sum(b["partial_fit_calls"] for b in bracket_info)
+        bracket_info = reversed(sorted(bracket_info, key=lambda x: x["bracket"]))
 
         info = {
-            "num_partial_fit_calls": num_partial_fit,
-            "num_models": num_models,
-            "_brackets": bracket_info,
+            "partial_fit_calls": num_partial_fit,
+            "models": num_models,
+            "brackets": list(bracket_info),
         }
         return info
 
@@ -467,8 +473,8 @@ def _hyperband_paper_alg(R, eta=3):
     info = [
         {
             "bracket": k,
-            "num_models": hist["num_models"],
-            "num_partial_fit_calls": sum(hist["models"].values()),
+            "models": hist["num_models"],
+            "partial_fit_calls": sum(hist["models"].values()),
             "iters": {int(h) for h in hist["iters"]},
         }
         for k, hist in hists.items()

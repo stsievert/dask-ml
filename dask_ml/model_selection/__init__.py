@@ -15,5 +15,5 @@ __all__ = [
     "train_test_split",
     "compute_n_splits",
     "check_cv",
-    'HyperbandCV',
+    "HyperbandCV",
 ]

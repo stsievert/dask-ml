@@ -233,6 +233,7 @@ def test_partial_fit_copy():
 def test_meta_computation(loop, max_iter):
     with cluster() as (s, [a, b]):
         with Client(s["address"], loop=loop):
+
             X, y = make_classification(chunks=5, n_features=5)
             model = ConstantFunction()
             params = {"value": scipy.stats.uniform(0, 1)}
@@ -241,24 +242,10 @@ def test_meta_computation(loop, max_iter):
                 asynchronous=False
             )
             alg.fit(X, y)
+
             paper_info = alg.fit_metadata()
-            actual_info = alg.fit_metadata(meta=alg.meta_)
-            assert paper_info["num_models"] == actual_info["num_models"]
-            bounds = {
-                27: {"paper": (321, 321), "actual": (321, 321)},
-                81: {"paper": (1419, 1419), "actual": (1340, 1425)},
-            }
-            assert (
-                bounds[max_iter]["paper"][0] <=
-                paper_info["num_partial_fit_calls"] <=
-                bounds[max_iter]["paper"][1]
-            )
-            assert (
-                bounds[max_iter]["actual"][0] <=
-                actual_info["num_partial_fit_calls"] <=
-                bounds[max_iter]["actual"][1]
-            )
-            assert paper_info["_brackets"] == actual_info["_brackets"]
+            actual_info = alg.meta_
+            assert paper_info == actual_info
 
 
 def test_integration(loop):  # noqa: F811
