@@ -119,12 +119,14 @@ class HyperbandCV(DaskBaseSearchCV):
         An object that has support for ``partial_fit``, ``get_params``,
         ``set_params`` and ``score``. This can be an instance of scikit-learn's
         BaseEstimator
-    params : dict
-        The various parameters to search over.
-    max_iter : int, default=81
+    params : dict, list
+        The various parameters to search over. If dict, will be fed to
+        :func:`~sklearn.model_selection.ParameterSampler`. If list, each
+        element will be fed to the model.
+    max_iter : int
         The maximum number of partial_fit calls to any one model. This should
         be the number of ``partial_fit`` calls required for the model to
-        converge.
+        converge. See the notes on how to set this parameter.
     eta : int, default=3
         How aggressive to be in model tuning. It is not recommended to change
         this value, and if changed we recommend ``eta=4``.
@@ -254,7 +256,7 @@ class HyperbandCV(DaskBaseSearchCV):
         self,
         model,
         params,
-        max_iter=300,
+        max_iter,
         eta=3,
         asynchronous=True,
         random_state=42,
@@ -287,7 +289,11 @@ class HyperbandCV(DaskBaseSearchCV):
         N, R, brackets = _get_hyperband_params(self.max_iter, eta=self.eta)
         SHAs = [_SHA(n, r, limit=b + 1, patience=self.patience, tol=self.tol)
                 for n, r, b in zip(N, R, brackets)]
-        param_lists = [list(ParameterSampler(self.params, n)) for n in N]
+        if isinstance(self.params, list):
+            param_lists = [[self.params[::-1].pop() for _ in range(n)] for n in N]
+        else:
+            param_lists = [list(ParameterSampler(self.params, n)) for n in N]
+
         if isinstance(X, np.ndarray):
             X = da.from_array(X, chunks=X.shape)
         if isinstance(y, np.ndarray):
