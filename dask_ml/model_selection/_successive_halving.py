@@ -78,12 +78,11 @@ class _SHA:
             self.steps = 1
             return {k: r_i - 1 for k in info}
 
-        info_in = {k: v for k, v in info.items()}
         keep_training = stop_on_plateau(info,
                                         patience=self.patience,
                                         tol=self.tol)
         if sum(keep_training.values()) == 0:
-            return {k: 0 for k in info_in}
+            return {k: 0 for k in self._best_scores}
         info = {k: info[k] for k in keep_training}
 
         best = toolz.topk(n_i, info, key=lambda k: info[k][-1]['score'])
@@ -97,4 +96,7 @@ class _SHA:
         pf_calls = {k: info[k][-1]['partial_fit_calls'] for k in best}
         addtl_pf_calls = {k: r_i - pf_calls[k]
                           for k in best}
+        dont_train = {k: 0 for k in self._best_scores if k not in addtl_pf_calls}
+        assert set(addtl_pf_calls).intersection(dont_train) == set()
+        addtl_pf_calls.update(dont_train)
         return addtl_pf_calls
