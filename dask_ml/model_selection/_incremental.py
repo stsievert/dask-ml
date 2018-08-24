@@ -183,11 +183,17 @@ def _fit(
 
         # Delete the futures of bad models.  This cancels speculative tasks
         for ident in bad:
-            del models[ident]
-            del scores[ident]
-            del info[ident]
+            #  del models[ident]
+            if ident in scores:
+                del scores[ident]
+            if ident in info:
+                del info[ident]
 
         if not any(instructions.values()):
+            # BUG TODO: all of the keys in `instructions` need to remain
+            # keys of model at this point
+            #
+            # Simple implementation: comment out deleting of models
             break
 
         _models = {}
