@@ -317,7 +317,7 @@ class HyperbandCV(DaskBaseSearchCV):
                 y_train,
                 X_test,
                 y_test,
-                SHA.fit,
+                additional_partial_fit_calls=SHA.fit,
                 fit_params=fit_params,
                 scorer=self.scorer_,
             )
