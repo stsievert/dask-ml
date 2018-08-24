@@ -15,28 +15,37 @@ import random
 @gen_cluster(client=True, timeout=None)
 def test_basic(c, s, a, b):
     X, y = make_classification(n_samples=10000, n_features=10, chunks=1000)
-    model = SGDClassifier(tol=1e-3, penalty='elasticnet')
+    model = SGDClassifier(tol=1e-3, penalty="elasticnet")
 
-    params = {'alpha': np.logspace(-2, 1, num=1000),
-              'l1_ratio': np.linspace(0, 1, num=1000),
-              'average': [True, False]}
+    params = {
+        "alpha": np.logspace(-2, 1, num=1000),
+        "l1_ratio": np.linspace(0, 1, num=1000),
+        "average": [True, False],
+    }
 
     X_test, y_test = X[:1000], y[:1000]
     X_train = X[1000:]
     y_train = y[1000:]
 
     param_list = list(ParameterSampler(params, 100))
+
     def update(info):
-        pf_calls = {k: v[-1]['partial_fit_calls'] for k, v in info.items()}
+        pf_calls = {k: v[-1]["partial_fit_calls"] for k, v in info.items()}
         ret = {k: int(calls < 10) for k, calls in pf_calls.items()}
         # Don't train one model
         del ret[random.choice(list(ret.keys()))]
         return ret
-    info, models, history = yield fit(model, param_list,
-                                      X_train, y_train,
-                                      X_test, y_test,
-                                      additional_partial_fit_calls=update,
-                                      fit_params={'classes': [0, 1]})
+
+    info, models, history = yield fit(
+        model,
+        param_list,
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+        additional_partial_fit_calls=update,
+        fit_params={"classes": [0, 1]},
+    )
 
     # Ensure that we touched all data
     keys = {t[0] for t in s.transition_log}
@@ -54,14 +63,13 @@ def test_basic(c, s, a, b):
 
     XX_test, yy_test = yield c.compute([X_test, y_test])
     model, meta = yield models[0]
-    assert model.score(XX_test, yy_test) == info[0][-1]['score']
+    assert model.score(XX_test, yy_test) == info[0][-1]["score"]
 
     # `<` not `==` because we randomly dropped one model
     assert len(history) < 100 * 10
 
-    groups = toolz.groupby('partial_fit_calls', history)
-    assert (len(groups[1]) > len(groups[2]) >
-            len(groups[3]) > len(groups[max(groups)]))
+    groups = toolz.groupby("partial_fit_calls", history)
+    assert len(groups[1]) > len(groups[2]) > len(groups[3]) > len(groups[max(groups)])
     assert max(groups) == 10
 
 
@@ -81,8 +89,7 @@ def test_partial_fit_doesnt_mutate_inputs():
     model = SGDClassifier(tol=1e-3)
     model.partial_fit(X[: n // 2], y[: n // 2], classes=np.unique(y))
     new_model, new_meta = _partial_fit(
-        (model, meta), X[n // 2:], y[n // 2:],
-        fit_params={"classes": np.unique(y)}
+        (model, meta), X[n // 2 :], y[n // 2 :], fit_params={"classes": np.unique(y)}
     )
     assert meta != new_meta
     assert new_meta["partial_fit_calls"] == 2
@@ -93,12 +100,12 @@ def test_partial_fit_doesnt_mutate_inputs():
 @gen_cluster(client=True, timeout=None)
 def test_explicit(c, s, a, b):
     X, y = make_classification(n_samples=1000, n_features=10, chunks=(200, 10))
-    model = SGDClassifier(tol=1e-3, penalty='elasticnet')
-    params = [{'alpha': .1}, {'alpha': .2}]
+    model = SGDClassifier(tol=1e-3, penalty="elasticnet")
+    params = [{"alpha": .1}, {"alpha": .2}]
 
     def update(scores):
         """ Progress through predefined updates, checking along the way """
-        ts = scores[0][-1]['partial_fit_calls']
+        ts = scores[0][-1]["partial_fit_calls"]
         ts -= 1  # partial_fit_calls = time step + 1
         if ts == 0:
             assert len(scores) == len(params)
@@ -122,19 +129,26 @@ def test_explicit(c, s, a, b):
         else:
             raise Exception()
 
-    info, models, history = yield fit(model, params, X, y,
-                                      X.blocks[-1], y.blocks[-1],
-                                      additional_partial_fit_calls=update, scorer=None,
-                                      fit_params={'classes': [0, 1]})
+    info, models, history = yield fit(
+        model,
+        params,
+        X,
+        y,
+        X.blocks[-1],
+        y.blocks[-1],
+        additional_partial_fit_calls=update,
+        scorer=None,
+        fit_params={"classes": [0, 1]},
+    )
     assert all(model.done() for model in models.values())
 
     models = yield models
     model, meta = models[0]
 
-    assert meta['params'] == {'alpha': 0.1}
-    assert meta['partial_fit_calls'] == 6 + 1
+    assert meta["params"] == {"alpha": 0.1}
+    assert meta["partial_fit_calls"] == 6 + 1
     assert len(models) == len(info) == 1
-    assert meta['partial_fit_calls'] == history[-1]['partial_fit_calls']
+    assert meta["partial_fit_calls"] == history[-1]["partial_fit_calls"]
 
     while s.tasks or c.futures:  # all data clears out
         yield gen.sleep(0.01)

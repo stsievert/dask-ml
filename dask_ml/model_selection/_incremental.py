@@ -41,8 +41,8 @@ def _partial_fit(model_and_meta, X, y, fit_params):
             model.partial_fit(X, y, **(fit_params or {}))
 
         meta = dict(meta)
-        meta['partial_fit_calls'] += 1
-        meta['partial_fit_time'] = time() - start
+        meta["partial_fit_calls"] += 1
+        meta["partial_fit_time"] = time() - start
 
         return model, meta
 
@@ -64,9 +64,9 @@ def _create_model(model, ident, **params):
     """ Create a model by cloning and then setting params """
     with log_errors(pdb=True):
         model = clone(model).set_params(**params)
-        if hasattr(model, 'initialize') and callable(model.initialize):
+        if hasattr(model, "initialize") and callable(model.initialize):
             model.initialize()
-        return model, {'model_id': ident, 'params': params, 'partial_fit_calls': 0}
+        return model, {"model_id": ident, "params": params, "partial_fit_calls": 0}
 
 
 @gen.coroutine
@@ -151,8 +151,9 @@ def _fit(
         _models[ident] = model
         _scores[ident] = score
         _specs[ident] = spec
-    _models, _scores, _specs = dask.persist(_models, _scores, _specs,
-                                            priority={tuple(_specs.values()): -1})
+    _models, _scores, _specs = dask.persist(
+        _models, _scores, _specs, priority={tuple(_specs.values()): -1}
+    )
     _models = {k: list(v.dask.values())[0] for k, v in _models.items()}
     _scores = {k: list(v.dask.values())[0] for k, v in _scores.items()}
     _specs = {k: list(v.dask.values())[0] for k, v in _specs.items()}
@@ -169,11 +170,10 @@ def _fit(
         metas = yield client.gather(new_scores)
 
         for meta in metas:
-            ident = meta['model_id']
+            ident = meta["model_id"]
 
             info[ident].append(meta)
             history.append(meta)
-
 
         time_start = time()
         if additional_partial_fit_calls is None:
@@ -194,7 +194,7 @@ def _fit(
         _scores = {}
         _specs = {}
         for ident, k in instructions.items():
-            start = info[ident][-1]['partial_fit_calls'] + 1
+            start = info[ident][-1]["partial_fit_calls"] + 1
             if k:
                 k -= 1
                 model = speculative.pop(ident, None)
@@ -213,8 +213,10 @@ def _fit(
         _models2, _scores2, _specs2 = dask.persist(
             _models, _scores, _specs, priority={tuple(_specs.values()): -1}
         )
-        _models2 = {k: v if isinstance(v, Future) else list(v.dask.values())[0]
-                    for k, v in _models2.items()}
+        _models2 = {
+            k: v if isinstance(v, Future) else list(v.dask.values())[0]
+            for k, v in _models2.items()
+        }
 
         _scores2 = {k: list(v.dask.values())[0] for k, v in _scores2.items()}
         _specs2 = {k: list(v.dask.values())[0] for k, v in _specs2.items()}
