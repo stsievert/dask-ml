@@ -260,6 +260,8 @@ class HyperbandCV(DaskBaseSearchCV):
         random_state=42,
         scoring=None,
         test_size=0.15,
+        patience=np.inf,
+        tol=1e-3,
     ):
         self.model = model
         self.params = params
@@ -268,6 +270,8 @@ class HyperbandCV(DaskBaseSearchCV):
         self.test_size = test_size
         self.random_state = random_state
         self.asynchronous = asynchronous
+        self.patience = patience
+        self.tol = tol
 
         super(HyperbandCV, self).__init__(model, scoring=scoring)
 
@@ -281,7 +285,8 @@ class HyperbandCV(DaskBaseSearchCV):
             Additional partial fit keyword arguments for the estimator.
         """
         N, R, brackets = _get_hyperband_params(self.max_iter, eta=self.eta)
-        SHAs = [_SHA(n, r, limit=b + 1) for n, r, b in zip(N, R, brackets)]
+        SHAs = [_SHA(n, r, limit=b + 1, patience=self.patience, tol=self.tol)
+                for n, r, b in zip(N, R, brackets)]
         param_lists = [list(ParameterSampler(self.params, n)) for n in N]
         if isinstance(X, np.ndarray):
             X = da.from_array(X, chunks=X.shape)
@@ -324,9 +329,9 @@ class HyperbandCV(DaskBaseSearchCV):
             if best_model_id == key(bracket, model_id)
         ]
         assert len(best_model) == 1
+        self.best_estimator_ = best_model[0].result()[0]
         self.cv_results_ = cv_results
         self.best_index_ = best_idx
-        self.best_estimator_ = best_model[0].result()[0]
         self.n_splits_ = 1
         self.multimetric_ = False
 

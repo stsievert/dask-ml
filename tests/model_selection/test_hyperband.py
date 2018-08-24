@@ -86,7 +86,7 @@ def test_hyperband_mirrors_paper(loop, max_iter=27):
             model = ConstantFunction()
             params = {"value": scipy.stats.uniform(0, 1)}
             alg = HyperbandCV(
-                model, params, max_iter=max_iter, random_state=0, asynchronous=False
+                model, params, max_iter=max_iter, random_state=0, asynchronous=False,
             )
             alg.fit(X, y)
             assert alg.metadata() == alg.metadata_
