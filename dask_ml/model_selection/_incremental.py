@@ -5,7 +5,7 @@ from copy import deepcopy
 from sklearn.base import clone
 from sklearn.utils import check_random_state
 from tornado import gen
-from distributed.metrics import time
+from time import time
 
 import dask
 import dask.array as da
@@ -132,7 +132,6 @@ def _fit(
             L = list(range(len(X_train)))
             rng.shuffle(L)
             order.extend(L)
-
         j = order[partial_fit_calls]
         return X_train[j], y_train[j]
 
@@ -163,6 +162,7 @@ def _fit(
 
     new_scores = list(_scores.values())
     history = []
+    number_to_complete = len(models)
 
     # async for future, result in seq:
     while True:
@@ -174,6 +174,8 @@ def _fit(
             info[ident].append(meta)
             history.append(meta)
 
+
+        time_start = time()
         instructions = update(info)
         bad = set(models) - set(instructions)
 
@@ -184,10 +186,6 @@ def _fit(
             del info[ident]
 
         if not any(instructions.values()):
-            # BUG TODO: all of the keys in `instructions` need to remain
-            # keys of model at this point
-            #
-            # Simple implementation: comment out deleting of models
             break
 
         _models = {}
@@ -213,6 +211,7 @@ def _fit(
         )
         _models2 = {k: v if isinstance(v, Future) else list(v.dask.values())[0]
                     for k, v in _models2.items()}
+
         _scores2 = {k: list(v.dask.values())[0] for k, v in _scores2.items()}
         _specs2 = {k: list(v.dask.values())[0] for k, v in _specs2.items()}
         models.update(_models2)
@@ -220,6 +219,8 @@ def _fit(
         speculative = _specs2
 
         new_scores = list(_scores2.values())
+
+        time_stop = time()
 
     raise gen.Return((info, models, history))
 
