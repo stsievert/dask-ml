@@ -77,7 +77,7 @@ def _fit(
     y_train,
     X_test,
     y_test,
-    update,
+    additional_partial_fit_calls=None,
     fit_params=None,
     scorer=None,
     random_state=None,
@@ -176,7 +176,9 @@ def _fit(
 
 
         time_start = time()
-        instructions = update(info)
+        if additional_partial_fit_calls is None:
+            break
+        instructions = additional_partial_fit_calls(info)
         bad = set(models) - set(instructions)
 
         # Delete the futures of bad models.  This cancels speculative tasks
@@ -195,7 +197,9 @@ def _fit(
             start = info[ident][-1]['partial_fit_calls'] + 1
             if k:
                 k -= 1
-                model = speculative.pop(ident)
+                model = speculative.pop(ident, None)
+                if model is None:
+                    continue
                 for i in range(k):
                     X_future, y_future = get_futures(start + i)
                     model = d_partial_fit(model, X_future, y_future, fit_params)
