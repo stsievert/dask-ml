@@ -134,3 +134,9 @@ def test_integration(loop):  # noqa: F811
             assert isinstance(alg.best_score_, float)
             assert isinstance(alg.best_estimator_, ConstantFunction)
             assert isinstance(alg.best_params_, dict)
+            assert isinstance(alg.history_, dict)
+            for bracket, history in alg.history_.items():
+                assert 'bracket=' in bracket
+                for key in ['score', 'score_time', 'partial_fit_calls',
+                            'partial_fit_time', 'model_id']:
+                    assert all(key in h for h in history)

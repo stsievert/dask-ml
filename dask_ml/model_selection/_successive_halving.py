@@ -1,9 +1,44 @@
 import numpy as np
 import math
 import toolz
+from time import time
+
+
+def _get_hist(info):
+    hist = [v[-1] for v in info.values()]
+    for h in hist:
+        h['wall_time'] = time()
+    return hist
 
 
 def stop_on_plateau(info, patience=10, tol=0.001, max_iter=None):
+    """
+    Stop training when a plateau is reaching with validation score.
+
+    A plateau is defined to be when the validation scores are all below the
+    plateau's start score, plus the tolerance. The plateau is ``patience``
+    ``partial_fit`` calls wide. That is, a plateau if reached if for every
+    score,
+
+        score < plateau_start_score + tol
+
+    This function is designed for use with
+    :func:`~dask_ml.model_selection.fit`.
+
+    Parameters
+    ----------
+    patience : int
+        Number of partial_fit_calls that specifies the plateau's width
+    tol : float
+        The tolerance that specifies the plateau.
+    max_iter : int
+        How many times to call ``partial_fit`` on each model.
+
+    Returns
+    -------
+    partial_fit_calls : dict
+        Each key specifies wether to continue training this model.
+    """
     out = {}
     for ident, records in info.items():
         pf_calls = records[-1]['partial_fit_calls']
@@ -11,7 +46,6 @@ def stop_on_plateau(info, patience=10, tol=0.001, max_iter=None):
             out[ident] = 0
 
         elif pf_calls > patience:
-            # old = records[-patience]['score']
             plateau = {d['partial_fit_calls']: d['score']
                        for d in records
                        if d['partial_fit_calls'] >= pf_calls - patience}
@@ -23,6 +57,18 @@ def stop_on_plateau(info, patience=10, tol=0.001, max_iter=None):
         else:
             out[ident] = 1
     return out
+
+
+class _HistoryRecorder:
+    def __init__(self, fn, *args, **kwargs):
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
+        self.history = []
+
+    def fit(self, info):
+        self.history += _get_hist(info)
+        return self.fn(info, *self.args, **self.kwargs)
 
 
 class _SHA:
@@ -56,8 +102,10 @@ class _SHA:
         self.tol = tol
         self.limit = limit
         self._best_scores = {}
+        self._history = []
 
     def fit(self, info):
+        self._history += _get_hist(info)
         for ident, hist in info.items():
             self._best_scores[ident] = hist[-1]['score']
         n, r, eta = self.n, self.r, self.eta

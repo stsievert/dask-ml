@@ -287,8 +287,8 @@ class HyperbandCV(DaskBaseSearchCV):
             Additional partial fit keyword arguments for the estimator.
         """
         N, R, brackets = _get_hyperband_params(self.max_iter, eta=self.eta)
-        SHAs = [_SHA(n, r, limit=b + 1, patience=self.patience, tol=self.tol)
-                for n, r, b in zip(N, R, brackets)]
+        SHAs = {b: _SHA(n, r, limit=b + 1, patience=self.patience, tol=self.tol)
+                for n, r, b in zip(N, R, brackets)}
         if isinstance(self.params, list):
             param_lists = [[self.params[::-1].pop() for _ in range(n)] for n in N]
         else:
@@ -298,7 +298,8 @@ class HyperbandCV(DaskBaseSearchCV):
             X = da.from_array(X, chunks=X.shape)
         if isinstance(y, np.ndarray):
             y = da.from_array(y, chunks=y.shape)
-        X_train, X_test, y_train, y_test = train_test_split(X, y)
+        r = train_test_split(X, y, random_state=self.random_state)
+        X_train, X_test, y_train, y_test = r
         # We always want a concrete scorer, so return_dask_score=False
         # We want this because we're always scoring NumPy arrays
         self.scorer_ = check_scoring(self.model, scoring=self.scoring)
@@ -307,7 +308,7 @@ class HyperbandCV(DaskBaseSearchCV):
         hists = {}
         params = {}
         models = {}
-        for bracket, SHA, param_list in zip(brackets, SHAs, param_lists):
+        for (bracket, SHA), param_list in zip(SHAs.items(), param_lists):
             # first argument is the informatino on the best model; no need with
             # cv_results_
             _, b_models, hist = _incremental_fit(
@@ -320,6 +321,7 @@ class HyperbandCV(DaskBaseSearchCV):
                 additional_partial_fit_calls=SHA.fit,
                 fit_params=fit_params,
                 scorer=self.scorer_,
+                random_state=self.random_state,
             )
             hists[bracket] = hist
             params[bracket] = param_list
@@ -341,8 +343,9 @@ class HyperbandCV(DaskBaseSearchCV):
         self.n_splits_ = 1
         self.multimetric_ = False
 
-        meta, history = _get_meta(hists, brackets, key=key)
-        self.history_ = history
+        meta, _ = _get_meta(hists, brackets, key=key)
+        self.history_ = {'bracket={}'.format(b): SHA._history
+                         for b, SHA in SHAs.items()}
 
         self.metadata_ = {
             "models": sum(m["models"] for m in meta),
