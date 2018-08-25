@@ -5,7 +5,7 @@ from copy import deepcopy
 from sklearn.base import clone
 from sklearn.utils import check_random_state
 from tornado import gen
-from distributed.metrics import time
+from time import time
 
 import dask
 import dask.array as da
@@ -132,6 +132,7 @@ def _fit(
             L = list(range(len(X_train)))
             rng.shuffle(L)
             order.extend(L)
+
         j = order[partial_fit_calls]
         return X_train[j], y_train[j]
 
@@ -183,17 +184,11 @@ def _fit(
 
         # Delete the futures of bad models.  This cancels speculative tasks
         for ident in bad:
-            #  del models[ident]
-            if ident in scores:
-                del scores[ident]
-            if ident in info:
-                del info[ident]
+            del models[ident]
+            del scores[ident]
+            del info[ident]
 
         if not any(instructions.values()):
-            # BUG TODO: all of the keys in `instructions` need to remain
-            # keys of model at this point
-            #
-            # Simple implementation: comment out deleting of models
             break
 
         _models = {}
@@ -233,7 +228,6 @@ def _fit(
         new_scores = list(_scores2.values())
 
         time_stop = time()
-
     raise gen.Return((info, models, history))
 
 
