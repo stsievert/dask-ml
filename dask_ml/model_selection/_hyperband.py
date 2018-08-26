@@ -290,7 +290,8 @@ class HyperbandCV(DaskBaseSearchCV):
         SHAs = {b: _SHA(n, r, limit=b + 1, patience=self.patience, tol=self.tol)
                 for n, r, b in zip(N, R, brackets)}
         if isinstance(self.params, list):
-            param_lists = [[self.params[::-1].pop() for _ in range(n)] for n in N]
+            _params = self.params[::-1]
+            param_lists = [[_params.pop() for _ in range(n)] for n in N]
         else:
             param_lists = [list(ParameterSampler(self.params, n)) for n in N]
 
