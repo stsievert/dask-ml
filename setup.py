@@ -56,12 +56,12 @@ extensions = [
     )
 ]
 
-try:
-    from Cython.Build import cythonize
-except ImportError:
-    pass
-else:
-    extensions = cythonize(extensions)
+# try:
+#     from Cython.Build import cythonize
+# except ImportError:
+#     pass
+# else:
+#     extensions = cythonize(extensions)
 
 
 setup(
@@ -90,5 +90,5 @@ setup(
     setup_requires=["setuptools_scm"],
     install_requires=install_requires,
     extras_require=extras_require,
-    ext_modules=extensions,
+    # ext_modules=extensions,
 )
