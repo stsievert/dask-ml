@@ -262,8 +262,6 @@ class HyperbandCV(DaskBaseSearchCV):
         random_state=42,
         scoring=None,
         test_size=0.15,
-        patience=np.inf,
-        tol=1e-3,
     ):
         self.model = model
         self.params = params
@@ -272,8 +270,6 @@ class HyperbandCV(DaskBaseSearchCV):
         self.test_size = test_size
         self.random_state = random_state
         self.asynchronous = asynchronous
-        self.patience = patience
-        self.tol = tol
 
         super(HyperbandCV, self).__init__(model, scoring=scoring)
 
@@ -287,7 +283,7 @@ class HyperbandCV(DaskBaseSearchCV):
             Additional partial fit keyword arguments for the estimator.
         """
         N, R, brackets = _get_hyperband_params(self.max_iter, eta=self.eta)
-        SHAs = {b: _SHA(n, r, limit=b + 1, patience=self.patience, tol=self.tol)
+        SHAs = {b: _SHA(n, r, limit=b + 1)
                 for n, r, b in zip(N, R, brackets)}
         if isinstance(self.params, list):
             _params = self.params[::-1]
@@ -309,10 +305,11 @@ class HyperbandCV(DaskBaseSearchCV):
         hists = {}
         params = {}
         models = {}
+        infos = {}
         for (bracket, SHA), param_list in zip(SHAs.items(), param_lists):
             # first argument is the informatino on the best model; no need with
             # cv_results_
-            _, b_models, hist = _incremental_fit(
+            b_info, b_models, hist = _incremental_fit(
                 self.model,
                 param_list,
                 X_train,
@@ -327,6 +324,7 @@ class HyperbandCV(DaskBaseSearchCV):
             hists[bracket] = hist
             params[bracket] = param_list
             models[bracket] = b_models
+            infos[bracket] = b_info
 
         # Recreating the scores for each model
         key = lambda bracket, ident: "bracket={}-{}".format(bracket, ident)

@@ -42,7 +42,7 @@ def _partial_fit(model_and_meta, X, y, fit_params):
 
         meta = dict(meta)
         meta["partial_fit_calls"] += 1
-        meta["partial_fit_time"] = time() - start
+        meta["partial_fit_time"] += time() - start
 
         return model, meta
 
@@ -56,7 +56,8 @@ def _score(model_and_meta, X, y, scorer):
         score = model.score(X, y)
 
     meta = dict(meta)
-    meta.update(score=score, score_time=time() - start)
+    meta["score_time"] += time() - start
+    meta.update(score=score)
     return meta
 
 
@@ -66,7 +67,7 @@ def _create_model(model, ident, **params):
         model = clone(model).set_params(**params)
         if hasattr(model, "initialize") and callable(model.initialize):
             model.initialize()
-        return model, {"model_id": ident, "params": params, "partial_fit_calls": 0}
+        return model, {"model_id": ident, "params": params, "partial_fit_calls": 0, "partial_fit_time": 0, "score_time": 0}
 
 
 @gen.coroutine
