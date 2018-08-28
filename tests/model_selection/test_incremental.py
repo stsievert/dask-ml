@@ -33,7 +33,8 @@ def test_basic(c, s, a, b):
         pf_calls = {k: v[-1]["partial_fit_calls"] for k, v in info.items()}
         ret = {k: int(calls < 10) for k, calls in pf_calls.items()}
         # Don't train one model
-        del ret[random.choice(list(ret.keys()))]
+        some_keys = set(ret.keys()) - {0}
+        del ret[random.choice(list(some_keys))]
         return ret
 
     info, models, history = yield fit(
@@ -57,10 +58,6 @@ def test_basic(c, s, a, b):
         model2, meta2 = yield model
         assert isinstance(model2, SGDClassifier)
         assert isinstance(meta2, dict)
-
-    while c.futures or s.tasks:  # Cleans up cleanly after running
-        yield gen.sleep(0.01)
-
     XX_test, yy_test = yield c.compute([X_test, y_test])
     model, meta = yield models[0]
     assert model.score(XX_test, yy_test) == info[0][-1]["score"]
@@ -71,6 +68,13 @@ def test_basic(c, s, a, b):
     groups = toolz.groupby("partial_fit_calls", history)
     assert len(groups[1]) > len(groups[2]) > len(groups[3]) > len(groups[max(groups)])
     assert max(groups) == 10
+
+    keys = list(models.keys())
+    for key in keys:
+        del models[key]
+
+    while c.futures or s.tasks:  # Cleans up cleanly after running
+        yield gen.sleep(0.01)
 
 
 def test_partial_fit_doesnt_mutate_inputs():
@@ -85,6 +89,7 @@ def test_partial_fit_doesnt_mutate_inputs():
         "mean_copy_time": 0,
         "mean_fit_time": 0,
         "partial_fit_calls": 1,
+        "partial_fit_time": 0,
     }
     model = SGDClassifier(tol=1e-3)
     model.partial_fit(X[: n // 2], y[: n // 2], classes=np.unique(y))
@@ -149,6 +154,8 @@ def test_explicit(c, s, a, b):
     assert meta["partial_fit_calls"] == 6 + 1
     assert len(models) == len(info) == 1
     assert meta["partial_fit_calls"] == history[-1]["partial_fit_calls"]
+    assert set(models.keys()) == {0}
+    del models[0]
 
     while s.tasks or c.futures:  # all data clears out
         yield gen.sleep(0.01)
