@@ -65,8 +65,8 @@ def _create_model(model, ident, **params):
     """ Create a model by cloning and then setting params """
     with log_errors(pdb=True):
         model = clone(model).set_params(**params)
-        #  if "<class 'skorch" in str(type(model)):
-            #  model.initialize()
+        if "<class 'skorch" in str(type(model)):
+            model.initialize()
         return model, {
             "model_id": ident,
             "params": params,

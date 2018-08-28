@@ -309,7 +309,7 @@ class HyperbandCV(DaskBaseSearchCV):
         for (bracket, SHA), param_list in zip(SHAs.items(), param_lists):
             # first argument is the informatino on the best model; no need with
             # cv_results_
-            print("bracket={bracket} start")
+            print(f"bracket={bracket} start")
             b_info, b_models, hist = _incremental_fit(
                 self.model,
                 param_list,
@@ -322,7 +322,7 @@ class HyperbandCV(DaskBaseSearchCV):
                 scorer=self.scorer_,
                 random_state=self.random_state,
             )
-            print("bracket={bracket} end")
+            print(f"bracket={bracket} end")
             hists[bracket] = hist
             params[bracket] = param_list
             models[bracket] = b_models
