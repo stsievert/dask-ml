@@ -22,8 +22,7 @@ def stop_on_plateau(info, patience=10, tol=0.001, max_iter=None):
 
         score < plateau_start_score + tol
 
-    This function is designed for use with
-    :func:`~dask_ml.model_selection.fit`.
+    This function is designed for use with `fit`
 
     Parameters
     ----------
