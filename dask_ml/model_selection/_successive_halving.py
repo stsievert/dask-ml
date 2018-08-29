@@ -72,7 +72,7 @@ class _HistoryRecorder:
 
 
 class _SHA:
-    def __init__(self, n, r, eta=3, limit=None):
+    def __init__(self, n, r, eta=3, limit=None, patience=10, tol=0.001):
         """
         Perform the successive halving algorithm.
 
@@ -87,6 +87,10 @@ class _SHA:
             values correspond to being more aggressive in killing off
             models. The "infinite horizon" theory suggests eta=np.e=2.718...
             is optimal.
+        patience : int
+            Passed to `stop_on_plateau`
+        tol : float
+            Passed to `stop_on_plateau`
         """
         self.steps = 0
         self.n = n
@@ -96,6 +100,8 @@ class _SHA:
         self.limit = limit
         self._best_scores = {}
         self._history = []
+        self.patience = patience
+        self.tol = tol
 
     def fit(self, info):
         self._history += _get_hist(info)
@@ -118,6 +124,13 @@ class _SHA:
             # we have r_i - 1 more steps to train to
             self.steps = 1
             return {k: r_i - 1 for k in info}
+
+        keep_training = stop_on_plateau(info,
+                                        patience=self.patience,
+                                        tol=self.tol)
+        if sum(keep_training.values()) == 0:
+            return {k: 0 for k in self._best_scores}
+        info = {k: info[k] for k in keep_training}
 
         best = toolz.topk(n_i, info, key=lambda k: info[k][-1]['score'])
         self.steps += 1
