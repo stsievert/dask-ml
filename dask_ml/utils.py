@@ -341,6 +341,28 @@ class ConstantFunction(BaseEstimator):
         return self
 
 
+class ExpFunction(BaseEstimator):
+    def __init__(self, rate=1, final_value=1, **kwargs):
+        self.rate = rate
+        self.final_value = final_value
+        self._calls = 0
+        super(BaseEstimator, self).__init__(**kwargs)
+
+    def f(self, x):
+        return self.final_value * (1 - np.exp(-self.rate * x))
+
+    def partial_fit(self, *args, **kwargs):
+        self._calls += 1
+        time.sleep(0.1)
+        return self
+
+    def score(self, *args, **kwargs):
+        return self.f(self._calls) + 0.05 * np.random.rand()
+
+    def fit(self):
+        return self
+
+
 __all__ = ["assert_estimator_equal",
            "check_array",
            "check_random_state",
