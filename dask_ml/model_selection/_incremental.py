@@ -9,7 +9,7 @@ from time import time
 
 import dask
 import dask.array as da
-from dask.distributed import as_completed, default_client, futures_of, Future
+from dask.distributed import default_client, futures_of, Future
 from distributed.utils import log_errors
 
 
@@ -163,7 +163,6 @@ def _fit(
 
     new_scores = list(_scores.values())
     history = []
-    number_to_complete = len(models)
 
     # async for future, result in seq:
     while True:
@@ -175,7 +174,6 @@ def _fit(
             info[ident].append(meta)
             history.append(meta)
 
-        time_start = time()
         if additional_partial_fit_calls is None:
             break
         instructions = additional_partial_fit_calls(info)
@@ -225,8 +223,6 @@ def _fit(
         speculative = _specs2
 
         new_scores = list(_scores2.values())
-
-        time_stop = time()
 
     raise gen.Return((info, models, history))
 
