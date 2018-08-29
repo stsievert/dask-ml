@@ -7,8 +7,10 @@ import numpy as np
 from sklearn.model_selection import ParameterSampler
 from sklearn.metrics.scorer import check_scoring
 import toolz
+from tornado import gen
 
 import dask.array as da
+from dask.distributed import default_client
 
 from ._split import train_test_split
 from ._search import DaskBaseSearchCV
@@ -282,6 +284,10 @@ class HyperbandCV(DaskBaseSearchCV):
         **fit_params
             Additional partial fit keyword arguments for the estimator.
         """
+        return default_client().sync(self._fit, X, y, **fit_params)
+
+    @gen.coroutine
+    def _fit(self, X, y, **fit_params):
         N, R, brackets = _get_hyperband_params(self.max_iter, eta=self.eta)
         SHAs = {b: _SHA(n, r, limit=b + 1)
                 for n, r, b in zip(N, R, brackets)}
@@ -305,22 +311,26 @@ class HyperbandCV(DaskBaseSearchCV):
         hists = {}
         params = {}
         models = {}
+
+        results = yield {bracket: _incremental_fit(
+            self.model,
+            param_list,
+            X_train,
+            y_train,
+            X_test,
+            y_test,
+            additional_partial_fit_calls=SHA.fit,
+            fit_params=fit_params,
+            scorer=self.scorer_,
+            random_state=self.random_state,
+        )
+            for (bracket, SHA), param_list in zip(SHAs.items(), param_lists)}
+
         infos = {}
-        for (bracket, SHA), param_list in zip(SHAs.items(), param_lists):
-            # first argument is the informatino on the best model; no need with
+        for (bracket, result), param_list in zip(results.items(), param_lists):
+            # first argument is the information on the best model; no need with
             # cv_results_
-            b_info, b_models, hist = _incremental_fit(
-                self.model,
-                param_list,
-                X_train,
-                y_train,
-                X_test,
-                y_test,
-                additional_partial_fit_calls=SHA.fit,
-                fit_params=fit_params,
-                scorer=self.scorer_,
-                random_state=self.random_state,
-            )
+            b_info, b_models, hist = result
             hists[bracket] = hist
             params[bracket] = param_list
             models[bracket] = b_models
@@ -336,7 +346,7 @@ class HyperbandCV(DaskBaseSearchCV):
             if best_model_id == key(bracket, model_id)
         ]
         assert len(best_model) == 1
-        self.best_estimator_ = best_model[0].result()[0]
+        self.best_estimator_ = (yield best_model[0])[0]
         self.cv_results_ = cv_results
         self.best_index_ = best_idx
         self.n_splits_ = 1
@@ -351,7 +361,7 @@ class HyperbandCV(DaskBaseSearchCV):
             "partial_fit_calls": sum(m["partial_fit_calls"] for m in meta),
             "brackets": meta,
         }
-        return self
+        raise gen.Return(self)
 
     def metadata(self):
         """Get information about how much computation is required for
