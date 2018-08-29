@@ -42,7 +42,7 @@ def _partial_fit(model_and_meta, X, y, fit_params):
 
         meta = dict(meta)
         meta["partial_fit_calls"] += 1
-        meta["partial_fit_times"] += [time() - start]
+        meta["partial_fit_time"] = time() - start
 
         return model, meta
 
@@ -56,8 +56,7 @@ def _score(model_and_meta, X, y, scorer):
         score = model.score(X, y)
 
     meta = dict(meta)
-    meta["score_times"] += [time() - start]
-    meta.update(score=score)
+    meta.update(score=score, score_time=time() - start)
     return meta
 
 
@@ -67,13 +66,7 @@ def _create_model(model, ident, **params):
         model = clone(model).set_params(**params)
         if "<class 'skorch" in str(type(model)):
             model.initialize()
-        return model, {
-            "model_id": ident,
-            "params": params,
-            "partial_fit_times": [],
-            "score_times": [],
-            "partial_fit_calls": 0,
-        }
+        return model, {"model_id": ident, "params": params, "partial_fit_calls": 0}
 
 
 @gen.coroutine
