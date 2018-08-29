@@ -6,7 +6,7 @@ import toolz
 from tornado import gen
 
 from dask_ml.datasets import make_classification
-from dask_ml.model_selection._incremental import fit, _partial_fit
+from dask_ml.model_selection._incremental import fit, _partial_fit, _score
 from sklearn.model_selection import ParameterSampler
 import distributed
 import random
@@ -67,6 +67,14 @@ def test_basic(c, s, a, b):
 
     # `<` not `==` because we randomly dropped one model
     assert len(history) < 100 * 10
+    for key in {
+        "partial_fit_time",
+        "score_time",
+        "model_id",
+        "params",
+        "partial_fit_calls",
+    }:
+        assert key in history[0]
 
     groups = toolz.groupby("partial_fit_calls", history)
     assert len(groups[1]) > len(groups[2]) > len(groups[3]) > len(groups[max(groups)])
@@ -84,7 +92,7 @@ def test_partial_fit_doesnt_mutate_inputs():
         "iterations": 0,
         "mean_copy_time": 0,
         "mean_fit_time": 0,
-        "partial_fit_calls": 1,
+        "partial_fit_calls": 0,
     }
     model = SGDClassifier(tol=1e-3)
     model.partial_fit(X[: n // 2], y[: n // 2], classes=np.unique(y))
@@ -95,6 +103,10 @@ def test_partial_fit_doesnt_mutate_inputs():
     assert new_meta["partial_fit_calls"] == 2
     assert not np.allclose(model.coef_, new_model.coef_)
     assert model.t_ < new_model.t_
+    assert new_meta["partial_fit_time"] >= 0
+    new_meta2 = _score((model, new_meta), X[n // 2 :], y[n // 2 :], None)
+    assert new_meta2["score_time"] >= 0
+    assert new_meta2 != new_meta
 
 
 @gen_cluster(client=True, timeout=None)
