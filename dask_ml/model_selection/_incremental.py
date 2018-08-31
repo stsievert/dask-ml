@@ -167,6 +167,7 @@ def _fit(
     number_to_complete = len(models)
 
     # async for future, result in seq:
+    incremental = False
     while True:
         metas = yield client.gather(new_scores)
 

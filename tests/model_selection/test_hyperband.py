@@ -10,13 +10,45 @@ from dask_ml.datasets import make_classification
 from dask_ml.model_selection import HyperbandCV
 from dask_ml.wrappers import Incremental
 from dask_ml.utils import ConstantFunction
+from sklearn.model_selection import ParameterSampler
+from dask_ml.model_selection._incremental import fit as incremental_fit
+from dask_ml.model_selection._successive_halving import stop_on_plateau
+from toolz import partial
 
 import pytest
 
 
+def test_stop_on_plateau(loop):
+    with cluster() as (s, [a, b]):
+        with Client(s["address"], loop=loop):
+            model = ConstantFunction()
+            params = {"value": np.random.rand(40)}
+
+            n, d = 20, 10
+            X, y = make_classification(
+                n_samples=n, n_features=d, random_state=1, chunks=n
+            )
+            param_list = list(ParameterSampler(params, 20))
+            addtl_calls = partial(stop_on_plateau, patience=10, tol=1e-3)
+            info, models, history = incremental_fit(
+                model,
+                param_list,
+                X,
+                y,
+                X,
+                y,
+                additional_partial_fit_calls=addtl_calls,
+                random_state=42,
+            )
+            pf_calls = {}
+            for hist in history:
+                pf_calls[hist["model_id"]] = hist["partial_fit_calls"]
+            assert set(pf_calls.values()) == {10}
+
+
 @pytest.mark.parametrize(  # noqa: F811
     "array_type,library",
-    [("dask.array", "dask-ml"), ("numpy", "sklearn"), ("numpy", "test")],
+    [("dask.array", "dask-ml"), ("numpy", "sklearn"), ("numpy", "ConstantFunction")],
 )
 def test_sklearn(array_type, library, loop):
     with cluster() as (s, [a, b]):
@@ -51,7 +83,7 @@ def test_sklearn(array_type, library, loop):
             if library == "dask-ml":
                 model = Incremental(model)
                 params = {"estimator__" + k: v for k, v in params.items()}
-            elif library == "test":
+            elif library == "ConstantFunction":
                 model = ConstantFunction()
                 params = {"value": np.linspace(0, 1, num=1000)}
 
@@ -78,7 +110,7 @@ def test_sklearn(array_type, library, loop):
             )
 
 
-def test_hyperband_mirrors_paper(loop, max_iter=27):
+def test_hyperband_mirrors_paper(loop, max_iter=81):
     with cluster() as (s, [a, b]):
         with Client(s["address"], loop=loop):
 
@@ -86,10 +118,41 @@ def test_hyperband_mirrors_paper(loop, max_iter=27):
             model = ConstantFunction()
             params = {"value": scipy.stats.uniform(0, 1)}
             alg = HyperbandCV(
-                model, params, max_iter=max_iter, random_state=0, asynchronous=False,
+                model, params, max_iter=max_iter, random_state=0, asynchronous=False
             )
             alg.fit(X, y)
-            assert alg.metadata() == alg.metadata_
+            metadata = alg.metadata()
+            paper_iters = [b.pop("iters") for b in metadata["brackets"]]
+            actual_iters = [b.pop("iters") for b in alg.metadata_["brackets"]]
+            assert metadata == alg.metadata_
+            for paper_iter, actual_iter in zip(paper_iters, actual_iters):
+                assert set(paper_iter).issubset(set(actual_iter))
+
+
+def test_hyperband_patience(loop):
+    with cluster() as (s, [a, b]):
+        with Client(s["address"], loop=loop):
+
+            X, y = make_classification(chunks=5, n_features=5)
+            model = ConstantFunction()
+            params = {"value": scipy.stats.uniform(0, 1)}
+            alg = HyperbandCV(
+                model, params, max_iter=27, random_state=0, patience=10, tol=1e-3
+            )
+
+            alg.fit(X, y)
+
+            actual_iters = [b.pop("iters") for b in alg.metadata_["brackets"]]
+            paper_iters = [b.pop("iters") for b in alg.metadata()["brackets"]]
+            for paper_iter, actual_iter in zip(paper_iters, actual_iters):
+                paper_iter = {k for k in paper_iter if k <= 15}
+                assert set(paper_iter).issubset(actual_iter)
+                assert all(b_iter <= 15 for b_iter in actual_iter)
+            assert (
+                alg.metadata_["partial_fit_calls"]
+                <= alg.metadata()["partial_fit_calls"]
+            )
+            assert alg.metadata_["models"] == alg.metadata()["models"]
 
 
 def test_integration(loop):  # noqa: F811
@@ -136,7 +199,12 @@ def test_integration(loop):  # noqa: F811
             assert isinstance(alg.best_params_, dict)
             assert isinstance(alg.history_, dict)
             for bracket, history in alg.history_.items():
-                assert 'bracket=' in bracket
-                for key in ['score', 'score_time', 'partial_fit_calls',
-                            'partial_fit_time', 'model_id']:
+                assert "bracket=" in bracket
+                for key in [
+                    "score",
+                    "score_time",
+                    "partial_fit_calls",
+                    "partial_fit_time",
+                    "model_id",
+                ]:
                     assert all(key in h for h in history)
