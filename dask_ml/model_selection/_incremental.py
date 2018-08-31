@@ -193,9 +193,7 @@ def _fit(
             start = info[ident][-1]["partial_fit_calls"] + 1
             if k:
                 k -= 1
-                model = speculative.pop(ident, None)
-                if model is None:
-                    continue
+                model = speculative.pop(ident)
                 for i in range(k):
                     X_future, y_future = get_futures(start + i)
                     model = d_partial_fit(model, X_future, y_future, fit_params)
