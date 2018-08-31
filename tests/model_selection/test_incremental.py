@@ -29,7 +29,7 @@ def test_basic(c, s, a, b):
 
     param_list = list(ParameterSampler(params, 100))
 
-    def update(info):
+    def additional_calls(info):
         pf_calls = {k: v[-1]["partial_fit_calls"] for k, v in info.items()}
         ret = {k: int(calls < 10) for k, calls in pf_calls.items()}
         # Don't train one model
@@ -44,7 +44,7 @@ def test_basic(c, s, a, b):
         y_train,
         X_test,
         y_test,
-        additional_partial_fit_calls=update,
+        additional_calls,
         fit_params={"classes": [0, 1]},
     )
 
@@ -119,7 +119,7 @@ def test_explicit(c, s, a, b):
     model = SGDClassifier(tol=1e-3, penalty="elasticnet")
     params = [{"alpha": .1}, {"alpha": .2}]
 
-    def update(scores):
+    def additional_calls(scores):
         """ Progress through predefined updates, checking along the way """
         ts = scores[0][-1]["partial_fit_calls"]
         ts -= 1  # partial_fit_calls = time step + 1
@@ -152,7 +152,7 @@ def test_explicit(c, s, a, b):
         y,
         X.blocks[-1],
         y.blocks[-1],
-        additional_partial_fit_calls=update,
+        additional_calls,
         scorer=None,
         fit_params={"classes": [0, 1]},
     )

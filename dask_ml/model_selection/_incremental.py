@@ -77,7 +77,7 @@ def _fit(
     y_train,
     X_test,
     y_test,
-    additional_partial_fit_calls=None,
+    additional_calls,
     fit_params=None,
     scorer=None,
     random_state=None,
@@ -174,9 +174,7 @@ def _fit(
             info[ident].append(meta)
             history.append(meta)
 
-        if additional_partial_fit_calls is None:
-            break
-        instructions = additional_partial_fit_calls(info)
+        instructions = additional_calls(info)
         bad = set(models) - set(instructions)
 
         # Delete the futures of bad models.  This cancels speculative tasks
