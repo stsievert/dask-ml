@@ -82,7 +82,9 @@ class _HistoryRecorder:
 
 class _SHA:
 
-    def __init__(self, n, r, eta=3, limit=None, patience=10, tol=0.001):
+    def __init__(
+        self, n, r, eta=3, limit=None, patience=10, tol=0.001, bracket=0, verbose=0
+    ):
         """
         Perform the successive halving algorithm.
 
@@ -114,6 +116,10 @@ class _SHA:
         self.tol = tol
         self._to_reach = {}
         self._addtl = None
+        self._best_score = -np.inf
+        self._start_time = time()
+        self.bracket = bracket
+        self.verbose = verbose
 
     def fit(self, info):
         """
@@ -185,6 +191,15 @@ class _SHA:
         n, r, eta = self.n, self.r, self.eta
         n_i = int(math.floor(n * eta ** -self.steps))
         r_i = np.round(r * eta ** self.steps).astype(int)
+
+        if self.verbose > 0:
+            msg = (
+                "[CV] Found score={score} at {time:0.3f}s for Hyperband bracket={bracket}"
+            )
+            _time = time() - self._start_time
+            _bracket = self.bracket
+            _score = min(self._best_scores.values())
+            print(msg.format(bracket=_bracket, score=_score, time=_time))
 
         # Initial case
         # partial fit has already been called once
