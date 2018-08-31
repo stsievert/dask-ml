@@ -2,6 +2,7 @@ from __future__ import division
 
 import logging
 import math
+from time import time
 
 import numpy as np
 from sklearn.model_selection import ParameterSampler
@@ -264,6 +265,8 @@ class HyperbandCV(DaskBaseSearchCV):
         random_state=42,
         scoring=None,
         test_size=0.15,
+        patience=np.inf,
+        tol=0.001,
     ):
         self.model = model
         self.params = params
@@ -272,6 +275,8 @@ class HyperbandCV(DaskBaseSearchCV):
         self.test_size = test_size
         self.random_state = random_state
         self.asynchronous = asynchronous
+        self.patience = patience
+        self.tol = tol
 
         super(HyperbandCV, self).__init__(model, scoring=scoring)
 
@@ -289,7 +294,7 @@ class HyperbandCV(DaskBaseSearchCV):
     @gen.coroutine
     def _fit(self, X, y, **fit_params):
         N, R, brackets = _get_hyperband_params(self.max_iter, eta=self.eta)
-        SHAs = {b: _SHA(n, r, limit=b + 1)
+        SHAs = {b: _SHA(n, r, limit=b + 1, patience=self.patience, tol=self.tol)
                 for n, r, b in zip(N, R, brackets)}
         if isinstance(self.params, list):
             _params = self.params[::-1]
@@ -312,6 +317,7 @@ class HyperbandCV(DaskBaseSearchCV):
         params = {}
         models = {}
 
+        _start = time()
         results = yield {bracket: _incremental_fit(
             self.model,
             param_list,
@@ -325,6 +331,7 @@ class HyperbandCV(DaskBaseSearchCV):
             random_state=self.random_state,
         )
             for (bracket, SHA), param_list in zip(SHAs.items(), param_lists)}
+        self._fit_time = time() - _start
 
         infos = {}
         for (bracket, result), param_list in zip(results.items(), param_lists):

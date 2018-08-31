@@ -67,6 +67,14 @@ def test_basic(c, s, a, b):
 
     # `<` not `==` because we randomly dropped one model
     assert len(history) < 100 * 10
+    for key in {
+        "partial_fit_time",
+        "score_time",
+        "model_id",
+        "params",
+        "partial_fit_calls",
+    }:
+        assert key in history[0]
 
     groups = toolz.groupby("partial_fit_calls", history)
     assert len(groups[1]) > len(groups[2]) > len(groups[3]) > len(groups[max(groups)])
@@ -85,8 +93,6 @@ def test_partial_fit_doesnt_mutate_inputs():
         "mean_copy_time": 0,
         "mean_fit_time": 0,
         "partial_fit_calls": 0,
-        "partial_fit_times": [],
-        "score_times": [],
     }
     model = SGDClassifier(tol=1e-3)
     model.partial_fit(X[: n // 2], y[: n // 2], classes=np.unique(y))
@@ -97,11 +103,10 @@ def test_partial_fit_doesnt_mutate_inputs():
     assert new_meta["partial_fit_calls"] == 1
     assert not np.allclose(model.coef_, new_model.coef_)
     assert model.t_ < new_model.t_
-    assert len(new_meta["partial_fit_times"]) == 1
-    assert len(new_meta["score_times"]) == 0
-    new_meta2 = _score((model, meta), X[n // 2 :], y[n // 2 :], None)
-    assert len(new_meta2["partial_fit_times"]) == 1
-    assert len(new_meta2["score_times"]) == 1
+    assert new_meta["partial_fit_time"] >= 0
+    new_meta2 = _score((model, new_meta), X[n // 2 :], y[n // 2 :], None)
+    assert new_meta2["score_time"] >= 0
+    assert new_meta2 != new_meta
 
 
 @gen_cluster(client=True, timeout=None)
