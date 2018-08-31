@@ -44,17 +44,20 @@ def stop_on_plateau(info, patience=10, tol=0.001, max_iter=None):
         if max_iter is not None and pf_calls >= max_iter:
             out[ident] = 0
 
-        elif pf_calls >= patience and len(pf_calls) > 1:
+        elif pf_calls >= patience:
             plateau = {
                 d["partial_fit_calls"]: d["score"]
                 for d in records
                 if d["partial_fit_calls"] >= pf_calls - patience
             }
-            plateau_start = plateau[min(plateau)]
-            if all(score < plateau_start + tol for score in plateau.values()):
-                out[ident] = 0
-            else:
+            if len(plateau) == 1:
                 out[ident] = 1
+            else:
+                plateau_start = plateau[min(plateau)]
+                if all(score < plateau_start + tol for score in plateau.values()):
+                    out[ident] = 0
+                else:
+                    out[ident] = 1
         else:
             out[ident] = 1
     return out
