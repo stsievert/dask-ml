@@ -2,6 +2,7 @@ from __future__ import division
 
 import logging
 import math
+from time import time
 
 import numpy as np
 from sklearn.model_selection import ParameterSampler
@@ -316,6 +317,7 @@ class HyperbandCV(DaskBaseSearchCV):
         params = {}
         models = {}
 
+        _start = time()
         results = yield {bracket: _incremental_fit(
             self.model,
             param_list,
@@ -329,6 +331,7 @@ class HyperbandCV(DaskBaseSearchCV):
             random_state=self.random_state,
         )
             for (bracket, SHA), param_list in zip(SHAs.items(), param_lists)}
+        self._fit_time = time() - _start
 
         infos = {}
         for (bracket, result), param_list in zip(results.items(), param_lists):
