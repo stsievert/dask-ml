@@ -374,9 +374,12 @@ class HyperbandCV(DaskBaseSearchCV):
         self.multimetric_ = False
 
         meta, _ = _get_meta(hists, brackets, key=key)
-        self.history_ = {
-            "bracket={}".format(b): SHA._history for b, SHA in SHAs.items()
-        }
+
+        for bracket, SHA in SHAs.items():
+            for h in SHA._history:
+                h["model_id"] = key(bracket, h["model_id"])
+                h["bracket"] = bracket
+        self.history_ = sum([SHA._history for SHA in SHAs.values()], [])
 
         self.metadata_ = {
             "models": sum(m["models"] for m in meta),
