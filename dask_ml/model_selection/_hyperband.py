@@ -267,6 +267,7 @@ class HyperbandCV(DaskBaseSearchCV):
         test_size=0.15,
         patience=np.inf,
         tol=0.001,
+        verbose=0,
     ):
         self.model = model
         self.params = params
@@ -277,6 +278,7 @@ class HyperbandCV(DaskBaseSearchCV):
         self.asynchronous = asynchronous
         self.patience = patience
         self.tol = tol
+        self.verbose = verbose
 
         super(HyperbandCV, self).__init__(model, scoring=scoring)
 
@@ -294,8 +296,18 @@ class HyperbandCV(DaskBaseSearchCV):
     @gen.coroutine
     def _fit(self, X, y, **fit_params):
         N, R, brackets = _get_hyperband_params(self.max_iter, eta=self.eta)
-        SHAs = {b: _SHA(n, r, limit=b + 1, patience=self.patience, tol=self.tol)
-                for n, r, b in zip(N, R, brackets)}
+        SHAs = {
+            b: _SHA(
+                n,
+                r,
+                limit=b + 1,
+                patience=self.patience,
+                tol=self.tol,
+                verbose=self.verbose,
+                bracket=b,
+            )
+            for n, r, b in zip(N, R, brackets)
+        }
         if isinstance(self.params, list):
             _params = self.params[::-1]
             param_lists = [[_params.pop() for _ in range(n)] for n in N]
@@ -318,19 +330,21 @@ class HyperbandCV(DaskBaseSearchCV):
         models = {}
 
         _start = time()
-        results = yield {bracket: _incremental_fit(
-            self.model,
-            param_list,
-            X_train,
-            y_train,
-            X_test,
-            y_test,
-            additional_partial_fit_calls=SHA.fit,
-            fit_params=fit_params,
-            scorer=self.scorer_,
-            random_state=self.random_state,
-        )
-            for (bracket, SHA), param_list in zip(SHAs.items(), param_lists)}
+        results = yield {
+            bracket: _incremental_fit(
+                self.model,
+                param_list,
+                X_train,
+                y_train,
+                X_test,
+                y_test,
+                additional_partial_fit_calls=SHA.fit,
+                fit_params=fit_params,
+                scorer=self.scorer_,
+                random_state=self.random_state,
+            )
+            for (bracket, SHA), param_list in zip(SHAs.items(), param_lists)
+        }
         self._fit_time = time() - _start
 
         infos = {}
@@ -360,8 +374,9 @@ class HyperbandCV(DaskBaseSearchCV):
         self.multimetric_ = False
 
         meta, _ = _get_meta(hists, brackets, key=key)
-        self.history_ = {'bracket={}'.format(b): SHA._history
-                         for b, SHA in SHAs.items()}
+        self.history_ = {
+            "bracket={}".format(b): SHA._history for b, SHA in SHAs.items()
+        }
 
         self.metadata_ = {
             "models": sum(m["models"] for m in meta),
