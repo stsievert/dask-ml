@@ -130,10 +130,10 @@ class HyperbandCV(DaskBaseSearchCV):
         The maximum number of partial_fit calls to any one model. This should
         be the number of ``partial_fit`` calls required for the model to
         converge. See the notes on how to set this parameter.
-    eta : int, default=3
+    aggressiveness : int, default=3
         How aggressive to be in model tuning. It is not recommended to change
         this value, and if changed we recommend ``eta=4``.
-        The theory behind Hyperband suggests ``eta=np.e``. Higher
+        Some theory behind Hyperband suggests ``eta=np.e``. Higher
         values imply higher confidence in model selection.
     test_size : float, optional
         Hyperband uses one test set for all example, and this controls the
@@ -260,7 +260,7 @@ class HyperbandCV(DaskBaseSearchCV):
         model,
         params,
         max_iter,
-        eta=3,
+        aggressiveness=3,
         asynchronous=True,
         random_state=42,
         scoring=None,
@@ -272,7 +272,7 @@ class HyperbandCV(DaskBaseSearchCV):
         self.model = model
         self.params = params
         self.max_iter = max_iter
-        self.eta = eta
+        self.aggressiveness = aggressiveness
         self.test_size = test_size
         self.random_state = random_state
         self.asynchronous = asynchronous
@@ -295,12 +295,13 @@ class HyperbandCV(DaskBaseSearchCV):
 
     @gen.coroutine
     def _fit(self, X, y, **fit_params):
-        N, R, brackets = _get_hyperband_params(self.max_iter, eta=self.eta)
+        N, R, brackets = _get_hyperband_params(self.max_iter, eta=self.aggressiveness)
         SHAs = {
             b: _SHA(
                 n,
                 r,
                 limit=b + 1,
+                eta=self.aggressiveness,
                 patience=self.patience,
                 tol=self.tol,
                 verbose=self.verbose,
@@ -412,7 +413,7 @@ class HyperbandCV(DaskBaseSearchCV):
         computation will be done if asynchronous is True.
 
         """
-        bracket_info = _hyperband_paper_alg(self.max_iter, eta=self.eta)
+        bracket_info = _hyperband_paper_alg(self.max_iter, eta=self.aggressiveness)
         num_models = sum(b["models"] for b in bracket_info)
         for bracket in bracket_info:
             bracket["iters"].update({1})
@@ -530,7 +531,8 @@ def _hyperband_paper_alg(R, eta=3):
     hists = {}
     for s in brackets:
         n = int(math.ceil(B / R * eta ** s / (s + 1)))
-        r = int(R * eta ** -s)
+        r = R * eta ** -s
+        r = int(r)
         T = set(range(n))
         hist = {"num_models": n, "models": {n: 0 for n in range(n)}, "iters": []}
         for i in range(s + 1):
