@@ -89,7 +89,7 @@ def test_basic(array_type, library, loop):
 
             max_iter = 27
             search = HyperbandCV(
-                model, params, max_iter=max_iter, random_state=42, asynchronous=False
+                model, params, max_iter=max_iter, random_state=42
             )
             search.fit(X, y, classes=da.unique(y))
 
@@ -127,7 +127,6 @@ def test_hyperband_mirrors_paper(loop, max_iter, aggressiveness):
                 params,
                 max_iter=max_iter,
                 random_state=0,
-                asynchronous=False,
                 aggressiveness=aggressiveness,
             )
             alg.fit(X, y)
@@ -172,7 +171,7 @@ def test_integration(loop):  # noqa: F811
             model = ConstantFunction()
             params = {"value": scipy.stats.uniform(0, 1)}
             alg = HyperbandCV(
-                model, params, asynchronous=True, max_iter=9, random_state=42
+                model, params, max_iter=9, random_state=42
             )
             alg.fit(X, y)
             cv_res_keys = set(alg.cv_results_.keys())

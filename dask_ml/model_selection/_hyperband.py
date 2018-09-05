@@ -7,7 +7,6 @@ from time import time
 import numpy as np
 from sklearn.model_selection import ParameterSampler
 from sklearn.metrics.scorer import check_scoring
-import toolz
 from tornado import gen
 
 import dask.array as da
@@ -44,62 +43,6 @@ def _get_hyperband_params(R, eta=3):
     N = [math.ceil(B / R * eta ** s / (s + 1)) for s in brackets]
     R = [int(R * eta ** -s) for s in brackets]
     return list(map(int, N)), R, brackets
-
-
-def _to_promote(result, completed_jobs, eta=3, asynchronous=True):
-    """
-    Arguments
-    ---------
-    result : dict
-        with keys ``bracket_iter``, ``bracket``, ``num_models``,
-        ``partial_fit_calls``
-    completed_jobs : dict values
-        List of completed jobs. Each job has the same keys as ``results``
-    eta : int
-        How aggressive to be in pruning
-    asynchronous : bool
-        Make a guess of wether to continue with this ``result``?
-
-    Returns
-    -------
-    jobs : list
-        List of jobs to continue training. If asynchronous=True, this is
-        result but modified for additional trainig. If asynchronous=False, this
-        is a list of results in ``bracket_models`` that need to be further
-        trained
-    """
-    bracket_models = [
-        r
-        for r in completed_jobs
-        if r["bracket_iter"] == result["bracket_iter"]
-        and r["bracket"] == result["bracket"]
-    ]
-    to_keep = len(bracket_models) // eta
-
-    bracket_completed = len(bracket_models) == result["num_models"]
-    if not asynchronous and not bracket_completed:
-        to_keep = 0
-    if to_keep <= 1:
-        return []
-
-    def _promote_job(job):
-        job["num_models"] = to_keep
-        job["partial_fit_calls"] *= eta
-        job["bracket_iter"] += 1
-        return job
-
-    top = toolz.topk(to_keep, bracket_models, key="score")
-    if not asynchronous:
-        for job in top:
-            job = _promote_job(job)
-        return top
-    else:
-        if to_keep == 0:
-            return [result]
-        if result in top:
-            result = _promote_job(result)
-            return [result]
-        return []
 
 
 class HyperbandCV(DaskBaseSearchCV):
@@ -139,14 +82,8 @@ class HyperbandCV(DaskBaseSearchCV):
         Hyperband uses one test set for all example, and this controls the
         size of that test set. It should be a floating point value between 0
         and 1 to represent the number of examples to put into the test set.
-    asynchronous : bool, optional
-        Controls the adaptive process by estimating which models to train
-        further or making an informed choice by waiting for all jobs to
-        complete.  Having many workers benefits or quick jobs benefits from
-        ``asynchronous=True``, which is what is recommended.
     random_state : int or np.random.RandomState
-        A random state for this class. Setting this helps enforce determinism (but
-        for ``asynchronous=True``, the fitting time and network still add randomness)
+        A random state for this class.
     scoring : str or callable, optional
         The scoring method by which to score different classifiers.
 
@@ -230,13 +167,6 @@ class HyperbandCV(DaskBaseSearchCV):
     space is. If you're tuning many parameters, you'll need to increase
     ``params_to_sample``.
 
-    Asynchronous keyword
-    ^^^^^^^^^^^^^^^^^^^^
-    The asynchronous variant [2]_ is controlled by the ``asynchronous``
-    keyword and suited for highly parallel architectures. Architectures with
-    little parallism (i.e., few workers) will benefit from
-    ``asynchronous=False``.
-
     Limitations
     ^^^^^^^^^^^
     There are some limitations to the `current` implementation of Hyperband:
@@ -249,9 +179,6 @@ class HyperbandCV(DaskBaseSearchCV):
     .. [1] "Hyperband: A novel bandit-based approach to hyperparameter
            optimization", 2016 by L. Li, K. Jamieson, G. DeSalvo, A.
            Rostamizadeh, and A. Talwalkar.  https://arxiv.org/abs/1603.06560
-    .. [2] "Massively Parallel Hyperparameter Tuning", 2018 by L. Li, K.
-            Jamieson, A. Rostamizadeh, K. Gonina, M. Hardt, B. Recht, A.
-            Talwalkar.  https://openreview.net/forum?id=S1Y7OOlRZ
 
     """
 
@@ -261,8 +188,7 @@ class HyperbandCV(DaskBaseSearchCV):
         params,
         max_iter,
         aggressiveness=3,
-        asynchronous=True,
-        random_state=42,
+        random_state=None,
         scoring=None,
         test_size=0.15,
         patience=np.inf,
@@ -275,7 +201,6 @@ class HyperbandCV(DaskBaseSearchCV):
         self.aggressiveness = aggressiveness
         self.test_size = test_size
         self.random_state = random_state
-        self.asynchronous = asynchronous
         self.patience = patience
         self.tol = tol
         self.verbose = verbose
@@ -407,10 +332,6 @@ class HyperbandCV(DaskBaseSearchCV):
         ------
         This algorithm runs several loops in an "embarassingly parallel"
         manner. The ``brackets`` key represents each of these loops.
-
-        Note that when asynchronous is True and meta is None, the amount of
-        computation described by this function is a lower bound: more
-        computation will be done if asynchronous is True.
 
         """
         bracket_info = _hyperband_paper_alg(self.max_iter, eta=self.aggressiveness)
