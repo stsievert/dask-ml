@@ -104,6 +104,9 @@ class _SHA:
             Passed to `stop_on_plateau`
         tol : float
             Passed to `stop_on_plateau`
+        verbose : int
+            Controls the verbosity of this object. Higher number means reporting
+            values more often.
         """
         self.steps = 0
         self.n = n

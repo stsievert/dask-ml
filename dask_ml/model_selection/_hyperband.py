@@ -86,6 +86,9 @@ class HyperbandCV(DaskBaseSearchCV):
         A random state for this class.
     scoring : str or callable, optional
         The scoring method by which to score different classifiers.
+    verbose : int
+        Controls the verbosity of this object. Higher number means reporting
+        values more often.
 
     Examples
     --------
@@ -246,11 +249,10 @@ class HyperbandCV(DaskBaseSearchCV):
             y = da.from_array(y, chunks=y.shape)
         r = train_test_split(X, y, random_state=self.random_state)
         X_train, X_test, y_train, y_test = r
-        # We always want a concrete scorer, so return_dask_score=False
-        # We want this because we're always scoring NumPy arrays
+
+        # We always want a concrete scorer because we're always scoring NumPy arrays
         self.scorer_ = check_scoring(self.model, scoring=self.scoring)
 
-        # TODO: run this for-loop in parallel
         hists = {}
         params = {}
         models = {}
@@ -293,7 +295,16 @@ class HyperbandCV(DaskBaseSearchCV):
             if best_model_id == key(bracket, model_id)
         ]
         assert len(best_model) == 1
+
+        # Make sure we get the best model
         self.best_estimator_ = (yield best_model[0])[0]
+
+        # Clean up models we're hanging onto
+        brackets = list(models.keys())
+        model_ids = {b: list(b_models.keys()) for b, b_models in models.items()}
+        for bracket in brackets:
+            for model_id in model_ids[bracket]:
+                del models[bracket][model_id]
         self.cv_results_ = cv_results
         self.best_index_ = best_idx
         self.n_splits_ = 1
