@@ -2,24 +2,23 @@ import contextlib
 import datetime
 import functools
 import logging
+import time
 from collections import Sequence
 from multiprocessing import cpu_count
 from numbers import Integral
 from timeit import default_timer as tic
-import time
 
 import dask
-
 import dask.array as da
 import dask.dataframe as dd
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator
 import sklearn.utils.extmath as skm
 import sklearn.utils.validation as sk_validation
 from dask import delayed
 from dask.array.utils import assert_eq as assert_eq_ar
 from dask.dataframe.utils import assert_eq as assert_eq_df
+from sklearn.base import BaseEstimator
 
 logger = logging.getLogger()
 
@@ -128,7 +127,7 @@ def check_array(array, *args, **kwargs):
                 raise TypeError(
                     "Cannot operate on Dask array with unknown chunk sizes."
                 )
-        if not accept_multiple_blocks:
+        if not accept_multiple_blocks and array.ndim > 1:
             if len(array.chunks[1]) > 1:
                 msg = (
                     "Chunking is only allowed on the first axis. "
@@ -188,6 +187,40 @@ def check_random_state(random_state):
         return random_state
     else:
         raise TypeError("Unexpected type '{}'".format(type(random_state)))
+
+
+def check_matching_blocks(*arrays):
+    """Check that the partitioning structure for many arrays matches.
+
+    Parameters
+    ----------
+    *arrays : Sequence of array-likes
+        This includes
+
+        * Dask Array
+        * Dask DataFrame
+        * Dask Series
+    """
+    if len(arrays) <= 1:
+        return
+    if all(isinstance(x, da.Array) for x in arrays):
+        # TODO: unknown chunks, ensure blocks match, or just raise (configurable)
+        chunks = arrays[0].chunks
+        for array in arrays[1:]:
+            if array.chunks != chunks:
+                raise ValueError(
+                    "Mismatched chunks. {} != {}".format(chunks, array.chunks)
+                )
+
+    elif all(isinstance(x, (dd.Series, dd.DataFrame)) for x in arrays):
+        divisions = arrays[0].divisions
+        for array in arrays[1:]:
+            if array.divisions != divisions:
+                raise ValueError(
+                    "Mismatched divisions. {} != {}".format(divisions, array.divisions)
+                )
+    else:
+        raise ValueError("Unexpected types {}.".format({type(x) for x in arrays}))
 
 
 def check_chunks(n_samples, n_features, chunks=None):
@@ -328,7 +361,7 @@ class ConstantFunction(BaseEstimator):
     def partial_fit(self, X, y=None, sleep=0, **kwargs):
         time.sleep(sleep)
         self._partial_fit_called = True
-        if not hasattr(self, 't_'):
+        if not hasattr(self, "t_"):
             self.t_ = 1
         self.t_ += X.shape[0]
         self.coef_ = X[0]
@@ -368,8 +401,10 @@ class ExpFunction(BaseEstimator):
         return self
 
 
-__all__ = ["assert_estimator_equal",
-           "check_array",
-           "check_random_state",
-           "check_chunks",
-           "ConstantFunction"]
+__all__ = [
+    "assert_estimator_equal",
+    "check_array",
+    "check_random_state",
+    "check_chunks",
+    "ConstantFunction",
+]
