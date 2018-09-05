@@ -114,7 +114,8 @@ def test_basic(array_type, library, loop):
             assert all("bracket" in id_ for id_ in model_ids)
 
 
-def test_hyperband_mirrors_paper(loop, max_iter=81):
+@pytest.mark.parametrize("max_iter,aggressiveness", [(27, 3), (64, 4)])
+def test_hyperband_mirrors_paper(loop, max_iter, aggressiveness):
     with cluster() as (s, [a, b]):
         with Client(s["address"], loop=loop):
 
@@ -122,7 +123,12 @@ def test_hyperband_mirrors_paper(loop, max_iter=81):
             model = ConstantFunction()
             params = {"value": scipy.stats.uniform(0, 1)}
             alg = HyperbandCV(
-                model, params, max_iter=max_iter, random_state=0, asynchronous=False
+                model,
+                params,
+                max_iter=max_iter,
+                random_state=0,
+                asynchronous=False,
+                aggressiveness=aggressiveness,
             )
             alg.fit(X, y)
             metadata = alg.metadata()
