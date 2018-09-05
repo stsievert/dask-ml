@@ -29,7 +29,8 @@ def stop_on_plateau(info, patience=10, tol=0.001, max_iter=None):
     patience : int
         Number of partial_fit_calls that specifies the plateau's width
     tol : float
-        The tolerance that specifies the plateau.
+        The plateau starts at a certain score. How far above that score is still
+        considered a plateau?
     max_iter : int
         How many times to call ``partial_fit`` on each model.
 

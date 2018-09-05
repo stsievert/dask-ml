@@ -50,7 +50,7 @@ def test_stop_on_plateau(loop):
     "array_type,library",
     [("dask.array", "dask-ml"), ("numpy", "sklearn"), ("numpy", "ConstantFunction")],
 )
-def test_sklearn(array_type, library, loop):
+def test_basic(array_type, library, loop):
     with cluster() as (s, [a, b]):
         with Client(s["address"], loop=loop):
             n, d = (200, 2)
@@ -87,8 +87,9 @@ def test_sklearn(array_type, library, loop):
                 model = ConstantFunction()
                 params = {"value": np.linspace(0, 1, num=1000)}
 
+            max_iter = 27
             search = HyperbandCV(
-                model, params, max_iter=27, random_state=42, asynchronous=False
+                model, params, max_iter=max_iter, random_state=42, asynchronous=False
             )
             search.fit(X, y, classes=da.unique(y))
 
@@ -108,6 +109,9 @@ def test_sklearn(array_type, library, loop):
             assert search.cv_results_["test_score"][best_idx] == max(
                 search.cv_results_["test_score"]
             )
+            model_ids = {h["model_id"] for h in search.history_}
+            assert len(model_ids) > max_iter
+            assert all("bracket" in id_ for id_ in model_ids)
 
 
 def test_hyperband_mirrors_paper(loop, max_iter=81):
@@ -197,14 +201,16 @@ def test_integration(loop):  # noqa: F811
             assert isinstance(alg.best_score_, float)
             assert isinstance(alg.best_estimator_, ConstantFunction)
             assert isinstance(alg.best_params_, dict)
-            assert isinstance(alg.history_, dict)
-            for bracket, history in alg.history_.items():
-                assert "bracket=" in bracket
-                for key in [
-                    "score",
-                    "score_time",
-                    "partial_fit_calls",
-                    "partial_fit_time",
-                    "model_id",
-                ]:
-                    assert all(key in h for h in history)
+            assert isinstance(alg.history_, list)
+            assert all("bracket=" in h["model_id"] for h in alg.history_)
+            keys = {
+                "score",
+                "score_time",
+                "partial_fit_calls",
+                "partial_fit_time",
+                "model_id",
+                "bracket",
+                "wall_time",
+                "params",
+            }
+            assert all(set(h.keys()) == keys for h in alg.history_)
