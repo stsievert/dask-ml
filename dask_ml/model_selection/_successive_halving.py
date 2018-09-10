@@ -158,7 +158,7 @@ class _SHA:
 
         # Score the model every patience/2 to have at least 3 points for every
         # plateau
-        patience = self.patience // 2
+        patience = 2 # self.patience // 2
 
         # Case: we need to call _fit again to see how long to train
         if self._addtl is None or sum(self._addtl.values()) == 0:
