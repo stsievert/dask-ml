@@ -9,6 +9,7 @@ models using Dask. Dask-ML implements GridSearchCV and RandomizedSearchCV.
    dask_ml.model_selection.GridSearchCV
    sklearn.model_selection.RandomizedSearchCV
    dask_ml.model_selection.RandomizedSearchCV
+   dask_ml.model_selection.HyperbandCV
 
 The varians in Dask-ML implement many (but not all) of the same parameters,
 and should be a drop-in replacement for the subset that they do implement.
@@ -25,6 +26,11 @@ In that case, why use Dask-ML's versions?
   identical parameters and inputs will only be fit once. For
   composite-estimators such as ``Pipeline`` this can be significantly more
   efficient as it can avoid expensive repeated computations.
+
+- :ref:`Adaptive algorithms <adaptive>` like Hyperband, which
+    - uses previous estimator evaluation to determine which estimator to
+      evaluate next.
+    - are (fairly) well suited for Dask's architecture.
 
 Both scikit-learn's and Dask-ML's model selection meta-estimators can be used
 with Dask's :ref:`joblib backend <joblib>`.
@@ -158,6 +164,30 @@ Due to the increased flexibility of Dask over Joblib, we're able to merge these
 tasks in the graph and only perform the fit step once for any
 parameter/data/estimator combination. For pipelines that have relatively
 expensive early steps, this can be a big win when performing a grid search.
+
+.. _adaptive:
+
+Adaptive Algorithms
+^^^^^^^^^^^^^^^^^^^
+Adaptive algorithms learn during the hyperparameter selection process and focus
+computation where it matters most.
+
+Dask-ML implements one adaptive algorithm, Hyperband [1]_, which is useful
+in the incremental learning case where we train models over batches of data.
+This requires that your models support the ``.partial_fit(...)`` method.
+It works by trying many possible parameters on the first few chunks of data,
+and then only continues training for those parameters that perform well. The
+best performing model sees every chunk of data with the default configuration.
+
+.. autosummary:: dask_ml.model_selection.HyperbandCV
+
+.. [1] "Hyperband: A novel bandit-based approach to hyperparameter
+       optimization", 2016 by L. Li, K. Jamieson, G. DeSalvo, A.
+       Rostamizadeh, and A. Talwalkar.  https://arxiv.org/abs/1603.06560
+
+ This means that a larger fraction of time well be spent on
+      better performing estimators, which will likely result in a higher
+      performing model than random sam
 
 Pipelines
 ---------
