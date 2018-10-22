@@ -914,3 +914,7 @@ class IncrementalSearchCV(BaseIncrementalSearchCV):
             else:
                 out[k] = steps
         return out
+
+
+class AdaptiveSearchCV(IncrementalSearchCV):
+    pass
