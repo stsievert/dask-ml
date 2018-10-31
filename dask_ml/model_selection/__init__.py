@@ -5,7 +5,6 @@ on the underlying estimators being used.
 """
 from ._search import GridSearchCV, RandomizedSearchCV, compute_n_splits, check_cv
 from ._split import ShuffleSplit, KFold, train_test_split
-from ._hyperband import HyperbandCV
 
 
 __all__ = [
@@ -13,7 +12,6 @@ __all__ = [
     "RandomizedSearchCV",
     "ShuffleSplit",
     "KFold",
-    "HyperbandCV",
     "train_test_split",
     "compute_n_splits",
     "check_cv",
@@ -22,7 +20,11 @@ __all__ = [
 
 try:
     from ._incremental import IncrementalSearchCV  # noqa: F401
+    from ._hyperband import HyperbandSearchCV  # noqa: F401
+    from ._successive_halving import SuccessiveHalvingSearchCV  # noqa: F401
 
-    __all__.extend(["IncrementalSearchCV"])
+    __all__.extend(
+        ["IncrementalSearchCV", "HyperbandSearchCV", "SuccessiveHalvingSearchCV"]
+    )
 except ImportError:
     pass
