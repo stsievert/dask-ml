@@ -5,6 +5,7 @@ on the underlying estimators being used.
 """
 from ._search import GridSearchCV, RandomizedSearchCV, compute_n_splits, check_cv
 from ._split import ShuffleSplit, KFold, train_test_split
+from ._black_box import BlackBox
 
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "train_test_split",
     "compute_n_splits",
     "check_cv",
+    "BlackBox",
 ]
 
 
