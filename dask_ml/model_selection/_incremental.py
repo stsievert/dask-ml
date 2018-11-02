@@ -613,6 +613,7 @@ class BaseIncrementalSearchCV(BaseEstimator, MetaEstimatorMixin):
             )
         return self.scorer_(self.best_estimator_, X, y)
 
+
 INC_ATTRS = """
     Attributes
     ----------
@@ -682,7 +683,8 @@ INC_ATTRS = """
 """
 
 
-INC_DOC = """
+INC_DOC = (
+    """
     Incrementally search for hyper-parameters on models that support partial_fit
 
     .. note::
@@ -775,7 +777,9 @@ INC_DOC = """
 
         If None, the estimator's default scorer (if available) is used.
 
-    """ + INC_ATTRS + """
+    """
+    + INC_ATTRS
+    + """
 
     Examples
     --------
@@ -823,6 +827,8 @@ INC_DOC = """
     after two consecutive calls to ``model.partial_fit`` without improvement,
     or when ``max_iter`` total calls to ``model.parital_fit`` are reached.
     """
+)
+
 
 class IncrementalSearchCV(BaseIncrementalSearchCV):
     __doc__ = INC_DOC
