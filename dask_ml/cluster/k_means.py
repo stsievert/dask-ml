@@ -4,6 +4,7 @@ from numbers import Integral
 
 import dask.array as da
 import dask.dataframe as dd
+import numba
 import numpy as np
 import pandas as pd
 from dask import compute
@@ -12,13 +13,13 @@ from sklearn.cluster import k_means_ as sk_k_means
 from sklearn.utils.extmath import squared_norm
 from sklearn.utils.validation import check_is_fitted
 
+from .._utils import draw_seed
 from ..metrics import (
     euclidean_distances,
     pairwise_distances,
     pairwise_distances_argmin_min,
 )
 from ..utils import _timed, _timer, check_array, row_norms
-from ._k_means import _centers_dense
 
 logger = logging.getLogger(__name__)
 
@@ -156,10 +157,8 @@ class KMeans(TransformerMixin, BaseEstimator):
         if isinstance(X, pd.DataFrame):
             X = X.values
 
-        elif isinstance(X, dd.DataFrame):
-            raise TypeError(
-                "Cannot fit on dask.dataframe due to unknown " "partition lengths."
-            )
+        if isinstance(X, dd.DataFrame):
+            X = X.to_dask_array(lengths=True)
 
         X = check_array(
             X,
@@ -388,7 +387,7 @@ def init_pp(X, n_clusters, random_state):
 def init_random(X, n_clusters, random_state):
     """K-means initialization using randomly chosen points"""
     logger.info("Initializing randomly")
-    idx = sorted(random_state.randint(0, len(X), size=n_clusters))
+    idx = sorted(draw_seed(random_state, 0, len(X), size=n_clusters))
     centers = X[idx].compute()
     return centers
 
@@ -456,7 +455,11 @@ def init_scalable(
     else:
         # Step 7, 8 without weights
         # dask RandomState objects aren't valid for scikit-learn
-        rng2 = random_state.randint(0, 2 ** 32 - 1, chunks=()).compute().item()
+        rng2 = (
+            draw_seed(random_state, 0, 2 ** 32 - 1, dtype="uint", chunks=())
+            .compute()
+            .item()
+        )
         km = sk_k_means.KMeans(n_clusters, random_state=rng2)
         km.fit(centers)
 
@@ -567,3 +570,16 @@ def _kmeans_single_lloyd(
     centers = centers.astype(dt)
 
     return labels, inertia, centers, i + 1
+
+
+@numba.njit(nogil=True, fastmath=True)
+def _centers_dense(X, labels, n_clusters, distances):
+    n_samples = X.shape[0]
+    n_features = X.shape[1]
+    centers = np.zeros((n_clusters, n_features), dtype=np.float64)
+
+    for i in range(n_samples):
+        for j in range(n_features):
+            centers[labels[i], j] += X[i, j]
+
+    return centers

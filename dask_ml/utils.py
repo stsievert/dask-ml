@@ -2,6 +2,7 @@ import contextlib
 import datetime
 import functools
 import logging
+import time
 from collections import Sequence
 from multiprocessing import cpu_count
 from numbers import Integral
@@ -17,6 +18,7 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 import sklearn.utils.extmath as skm
 import sklearn.utils.validation as sk_validation
+from sklearn.base import BaseEstimator
 from dask import delayed
 from dask.array.utils import assert_eq as assert_eq_ar
 from dask.dataframe.utils import assert_eq as assert_eq_df
@@ -128,7 +130,7 @@ def check_array(array, *args, **kwargs):
                 raise TypeError(
                     "Cannot operate on Dask array with unknown chunk sizes."
                 )
-        if not accept_multiple_blocks:
+        if not accept_multiple_blocks and array.ndim > 1:
             if len(array.chunks[1]) > 1:
                 msg = (
                     "Chunking is only allowed on the first axis. "
@@ -188,6 +190,40 @@ def check_random_state(random_state):
         return random_state
     else:
         raise TypeError("Unexpected type '{}'".format(type(random_state)))
+
+
+def check_matching_blocks(*arrays):
+    """Check that the partitioning structure for many arrays matches.
+
+    Parameters
+    ----------
+    *arrays : Sequence of array-likes
+        This includes
+
+        * Dask Array
+        * Dask DataFrame
+        * Dask Series
+    """
+    if len(arrays) <= 1:
+        return
+    if all(isinstance(x, da.Array) for x in arrays):
+        # TODO: unknown chunks, ensure blocks match, or just raise (configurable)
+        chunks = arrays[0].chunks
+        for array in arrays[1:]:
+            if array.chunks != chunks:
+                raise ValueError(
+                    "Mismatched chunks. {} != {}".format(chunks, array.chunks)
+                )
+
+    elif all(isinstance(x, (dd.Series, dd.DataFrame)) for x in arrays):
+        divisions = arrays[0].divisions
+        for array in arrays[1:]:
+            if array.divisions != divisions:
+                raise ValueError(
+                    "Mismatched divisions. {} != {}".format(divisions, array.divisions)
+                )
+    else:
+        raise ValueError("Unexpected types {}.".format({type(x) for x in arrays}))
 
 
 def check_chunks(n_samples, n_features, chunks=None):
@@ -317,18 +353,21 @@ def _num_samples(X):
 
 
 class ConstantFunction(BaseEstimator):
-    def __init__(self, value=0, **kwargs):
+    def __init__(self, value=0, sleep=0, **kwargs):
         self.value = value
         self._partial_fit_called = False
+        self.sleep = sleep
         super(BaseEstimator, self).__init__(**kwargs)
 
     def _fn(self):
         return self.value
 
-    def partial_fit(self, X, y=None, sleep=0, **kwargs):
-        time.sleep(sleep)
+    def partial_fit(self, X, y=None, **kwargs):
+        time.sleep(self.sleep)
         self._partial_fit_called = True
-        if not hasattr(self, 't_'):
+
+        # Mirroring sklearn's SGDClassifier epoch counting
+        if not hasattr(self, "t_"):
             self.t_ = 1
         self.t_ += X.shape[0]
         self.coef_ = X[0]
@@ -341,35 +380,10 @@ class ConstantFunction(BaseEstimator):
         return self
 
 
-class ExpFunction(BaseEstimator):
-    def __init__(self, rate=1, final_value=1, sleep=0.06, sigma=0.01, **kwargs):
-        self.rate = rate
-        self.final_value = final_value
-        self._calls = 0
-        self.sleep = sleep
-        self.sigma = sigma
-        super(BaseEstimator, self).__init__(**kwargs)
-
-    def f(self, x):
-        noise = np.random.rand()
-        if isinstance(x, np.ndarray):
-            noise = np.random.rand(len(x))
-        return self.final_value * (1 - np.exp(-self.rate * x)) + self.sigma * noise
-
-    def partial_fit(self, *args, **kwargs):
-        self._calls += 1
-        time.sleep(self.sleep)
-        return self
-
-    def score(self, *args, **kwargs):
-        return self.f(self._calls)
-
-    def fit(self):
-        return self
-
-
-__all__ = ["assert_estimator_equal",
-           "check_array",
-           "check_random_state",
-           "check_chunks",
-           "ConstantFunction"]
+__all__ = [
+    "assert_estimator_equal",
+    "check_array",
+    "check_random_state",
+    "check_chunks",
+    "ConstantFunction",
+]

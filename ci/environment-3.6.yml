@@ -4,9 +4,12 @@ channels:
   - conda-forge
 dependencies:
   - black
+  # Cython for building scikit-learn dev. Switch to nightly
+  # when this is resolved:
+  # https://github.com/scikit-learn/scikit-learn/issues/9485
+  - Cython
   - coverage
   - codecov
-  - Cython
   - flake8
   - heapdict
   - ipykernel
@@ -16,6 +19,7 @@ dependencies:
   - nbsphinx
   - nomkl
   - nose
+  - numba
   - numpy
   - numpydoc
   - pandas
@@ -25,7 +29,7 @@ dependencies:
   - pytest-mock
   - python=3.6
   - sortedcontainers
-  - scikit-learn
+  - scikit-learn>=0.20.0
   - scipy
   - six
   - sparse
@@ -33,6 +37,7 @@ dependencies:
   - sphinx_rtd_theme
   - sphinx-gallery
   - tensorflow
+  - testpath<0.4
   - tornado
   - toolz
   - xgboost
@@ -43,3 +48,4 @@ dependencies:
     - git+https://github.com/dask/distributed.git
     - git+https://github.com/dask/dask-tensorflow.git
     - git+https://github.com/dask/dask-xgboost.git
+    - dask_sphinx_theme >=1.1.0

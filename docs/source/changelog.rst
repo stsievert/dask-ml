@@ -1,6 +1,62 @@
 Changelog
 =========
 
+Version 0.11.0
+~~~~~~~~~~~~~~
+
+Note that this version of Dask-ML requires scikit-learn >= 0.20.0.
+
+Enhancements
+------------
+
+- Added :class:`dask_ml.model_selection.IncrementalSearchCV`, a meta-estimator for hyperparamter optimization on larger-than-memory datasets (:pr:`356`). See :ref:`hyperparameter.incremental` for more.
+- Added :class:`dask_ml.preprocessing.PolynomialTransformer`, a drop-in replacement for the scikit-learn version (:issue:`347`).
+- Added auto-rechunking to Dask Arrays with more than one block along the features in :class:`dask_ml.model_selection.ParallelPostFit` (:issue:`376`)
+- Added support for Dask DataFrame inputs to :class:`dask_ml.cluster.KMeans` (:issue:`390`)
+- Added a ``compute`` keyword to :meth:`dask_ml.wrappers.ParallelPostFit.score` to support lazily evaluating a model's score (:pr:`402`)
+
+Bug Fixes
+---------
+
+- Changed :class:`dask_ml.wrappers.ParallelPostFit` to automatically rechunk input arrays to methods like ``predict`` when they
+  have more than one block along the features (:issue:`376`).
+- Bug in :class:`dask_ml.impute.SimpleImputer` with Dask DataFrames filling the count of the most frequent item, rather than the item itself (:issue:`385`).
+- Bug in :class:`dask_ml.model_selection.ShuffleSplit` returning the same split when the ``random_state`` was set (:issue:`380`).
+
+Version 0.10.0
+~~~~~~~~~~~~~~
+
+Enhancements
+------------
+
+- Added support for :class:`dask.dataframe.DataFrame` to :meth:`dask_ml.model_selection.train_test_split` (:issue:`351`)
+
+Version 0.9.0
+~~~~~~~~~~~~~
+
+Enhancements
+------------
+
+- Added :class:`dask_ml.model_selection.ShuffleSplit` (:pr:`340`)
+
+Bug Fixes
+---------
+
+- Fixed handling of errors in the predict and score steps of :class:`dask_ml.model_selection.GridSearchCV` and :class:`dask_ml.model_selection.RandomizedSearchCV` (:pr:`339`)
+- Compatability with Dask 0.18 for :class:`dask_ml.preprocessing.LabelEncoder` (you'll also notice improved performance) (:pr:`336`).
+
+Documentation Updates
+---------------------
+
+- Added a :ref:`roadmap`. Please `open an issue <https://github.com/dask/dask-ml>`__ if you'd like something to be included on the roadmap. (:pr:`322`)
+- Added many :ref:`examples` to the documentation and the `dask examples <https://github.com/dask/dask-examples>`__ binder.
+
+Build Changes
+-------------
+
+We're now using `Numba <http://numba.pydata.org/>`__ for performance-sensitive parts of Dask-ML.
+Dask-ML is now a pure-python project, so we can provide universal wheels.
+
 Version 0.8.0
 ~~~~~~~~~~~~~
 

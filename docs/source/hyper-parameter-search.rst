@@ -1,14 +1,30 @@
 Hyper Parameter Search
 ======================
 
-*Parallel tools for hyperparameter optimization of Scikit-Learn API-compatible
-models.*
+*Tools for performing hyperparameter optimization of Scikit-Learn API-compatible models using Dask*.
 
-For parallel hyperparameter optimization you have a few options:
+There are two kinds of hyperparameter optimization estimators
+in Dask-ML. The appropriate one to use depends on the size of your dataset and
+whether the underlying estimator implements the `partial_fit` method.
 
-.. autosummary::
-   sklearn.model_selection.GridSearchCV
-   sklearn.model_selection.RandomizedSearchCV
+If your dataset is relatively small or the underlying estimator doesn't implement
+``partial_fit``, you can use :class:`dask_ml.model_selection.GridSearchCV` or
+:class:`dask_ml.model_selection.RandomizedSearchCV`.
+These are drop-in replacements for their scikit-learn counterparts, that should offer better performance and handling of Dask Arrays and DataFrames.
+The underlying estimator will need to be able to train on each cross-validation split of the data.
+See :ref:`hyperparameter.drop-in` for more.
+
+If your data is large and the underlying estimator implements ``partial_fit``, you can
+Dask-ML's :ref:`*incremental* hyperparameter optimizers <hyperparameter.incremental>`.
+
+.. _hyperparameter.drop-in:
+
+Drop-In Replacements for Scikit-Learn
+-------------------------------------
+
+Dask-ML implements drop-in replacements for
+:class:`~sklearn.model_selection.GridSearchCV` and
+:class:`~sklearn.model_selection.RandomizedSearchCV`.
 
 .. autosummary::
    dask_ml.model_selection.GridSearchCV
@@ -202,9 +218,131 @@ tasks in the graph and only perform the fit step once for any
 parameter/data/estimator combination. For pipelines that have relatively
 expensive early steps, this can be a big win when performing a grid search.
 
-Pipelines
----------
+.. _hyperparameter.incremental:
 
-Dask-ML uses scikit-learn's :class:`sklearn.pipeline.Pipeline` to express
-pipelines of estimators that are chained together. If the individual
-estimators work well with Dask's collections, the pipeline will as well.
+
+Incremental Hyperparameter Optimization
+---------------------------------------
+
+.. autosummary::
+   dask_ml.model_selection.IncrementalSearchCV
+
+.. note::
+
+   These estimators require the optional ``distributed`` library.
+
+These are make repeated calls to the ``partial_fit`` method of the estimator.
+Naturally, these classes determine when to stop calling ``partial_fit`` by
+`adapting to previous calls`. The most basic level of this is to stop training
+if the score doens't improve, which ``IncrementalSearchCV`` does. For more
+advanced methods, see :ref:`hyperparameter.hyperband`.
+
+
+Basic use
+^^^^^^^^^
+
+.. ipython:: python
+
+    from dask.distributed import Client
+    client = Client()
+    import numpy as np
+    from dask_ml.datasets import make_classification
+    X, y = make_classification(chunks=20, random_state=0)
+
+Our underlying estimator is an ``SGDClassifier``. We specify a few parameters
+common to each clone of the estimator:
+
+.. ipython:: python
+
+    from sklearn.linear_model import SGDClassifier
+    model = SGDClassifier(tol=1e-3, penalty='elasticnet', random_state=0)
+
+We also define the distribution of parameters from which we will sample:
+
+.. ipython:: python
+
+    params = {'alpha': np.logspace(-2, 1, num=1000),
+              'l1_ratio': np.linspace(0, 1, num=1000),
+              'average': [True, False]}
+
+
+Finally we create many random models in this parameter space and
+train-and-score them until we find the best one.
+
+.. ipython:: python
+
+    from dask_ml.model_selection import HyperbandSearchCV
+
+    search = HyperbandSearchCV(model, params, 9, random_state=0)
+    _ = search.fit(X, y, classes=[0, 1])
+    search.best_score_
+    search.best_params_
+
+Note that when you do post-fit tasks like ``search.score``, the underlying
+estimator's score method is used. If that is unable to handle a
+larger-than-memory Dask Array, you'll exhaust your machines memory. If you plan
+to use post-estimation features like scoring or prediction, we recommend using
+:class:`dask_ml.wrappers.ParallelPostFit`.
+
+.. ipython:: python
+
+   from dask_ml.wrappers import ParallelPostFit
+   params = {'estimator__alpha': np.logspace(-2, 1, num=1000)}
+   model = ParallelPostFit(SGDClassifier(tol=1e-3, random_state=0))
+   search = HyperbandSearchCV(model, params, 9, random_state=0)
+   _ = search.fit(X, y, classes=[0, 1])
+   search.score(X, y)
+
+Note that the parameter names include the ``estimator__`` prefix,
+as we're tuning the hyperparameters of the ``SGDClassifier`` that's
+underlying the ``ParallelPostFit``.
+
+.. _hyperparameter.hyperband:
+
+Adaptive hyperparameter search
+------------------------------
+
+.. autosummary::
+   dask_ml.model_selection.HyperbandSearchCV
+   dask_ml.model_selection.IncrementalSearchCV
+   dask_ml.model_selection.SuccessiveHalvingSearchCV
+
+We most recommend use of :class:`~dask_ml.model_selection.HyperbandSearchCV`.
+The two other implementations,
+:class:`~dask_ml.model_selection.IncrementalSearchCV` and
+:class:`~dask_ml.model_selection.SuccessiveHalvingSearchCV` are inspired and
+used by :class:`~dask_ml.model_selection.HyperbandSearchCV` respectively. We
+recommend it for reasons detailed in :ref:`hyperparameter.hyperband`.
+
+HyperbandSearchCV offers two benefits:
+
+1. It finds better models quicker
+2. It requires only two inputs
+
+High performing models
+^^^^^^^^^^^^^^^^^^^^^^
+
+Hyperband requires minimal computation because it has guarantees on
+finding the best set of parameters possible with a given number of
+``partial_fit`` calls [HY16]. [#qual]_ This is possible because Hyperband
+balances two extremes:
+
+* when only training time is important
+    * i.e., when the hyper-parameters don't influence the output at all)
+* when training time doesn't matter at all
+    * i.e., when the hyper-parameters exactly determine the output
+
+Parameters
+^^^^^^^^^^
+
+:class:`~dask_ml.model_selection.HyperbandSearchCV` requires knowing two items:
+
+* how many examples to pass to the estimator
+* how many parameters to initially evaluate
+
+Hyperband's required parameters fall out pretty naturally and simply from these
+two items, which is detailed in
+:class:`~dask_ml.model_selection.HyperbandSearchCV`'s documentation.
+
+.. [#qual] More accurately, Hyperband will find "close" to the best model in expected value with high probability, where "close" is "within log factors of the lower bound".
+.. [HY16] "Hyperband: A Novel Bandit-Based Approach to Hyperparameter Optimization" by Lisha Li, Kevin Jamieson, Giulia DeSalvo, Afshin Rostamizadeh and Ameet Talwalkar. https://arxiv.org/abs/1603.06560

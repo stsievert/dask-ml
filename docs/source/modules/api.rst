@@ -32,8 +32,10 @@ uses :class:`model_selection.ShuffleSplit` internally.
    :template: class.rst
 
    model_selection.ShuffleSplit
+   model_selection.KFold
 
 Dask-ML provides drop-in replacements for grid and randomized search.
+These are appropriate for datasets where the CV splits fit in memory.
 
 .. autosummary::
    :toctree: generated/
@@ -42,6 +44,20 @@ Dask-ML provides drop-in replacements for grid and randomized search.
    model_selection.GridSearchCV
    model_selection.RandomizedSearchCV
    model_selection.HyperbandCV
+
+For hyperparameter optimization on larger-than-memory datasets, Dask-ML
+provides the follwoing:
+
+.. autosummary::
+   :toctree: generated/
+   :template: class.rst
+
+   model_selection.IncrementalSearchCV
+   model_selection.HyperbandSearchCV
+   model_selection.SuccessiveHalvingSearchCV
+
+The classes above are useful because they adapt to prior estimator evaluations,
+but require ``partial_fit``.
 
 
 :mod:`dask_ml.linear_model`: Generalized Linear Models
@@ -61,11 +77,13 @@ Dask-ML provides drop-in replacements for grid and randomized search.
    linear_model.LogisticRegression
    linear_model.PoissonRegression
 
-Meta-estimators for scikit-learn
-================================
+:mod:`dask_ml.wrappers`: Meta-Estimators
+========================================
 
-dask-ml provides some meta-estimators that help use regular scikit-learn
-compatible estimators with Dask arrays.
+dask-ml provides some meta-estimators that help use regular
+estimators that follow the scikit-learn API.
+These meta-estimators make the underlying estimator work well
+with Dask Arrays or DataFrames.
 
 .. currentmodule:: dask_ml
 
@@ -130,6 +148,28 @@ compatible estimators with Dask arrays.
    preprocessing.DummyEncoder
    preprocessing.OrdinalEncoder
    preprocessing.LabelEncoder
+   preprocessing.PolynomialFeatures
+   
+:mod:`dask_ml.compose`: Composite Estimators
+============================================
+
+Meta-estimators for building composite models with transformers.
+
+.. automodule:: dask_ml.compose
+
+.. currentmodule:: dask_ml
+
+.. autosummary::
+   :toctree: generted/
+   :template: class.rst
+
+   compose.ColumnTransformer
+
+.. autosummary::
+   :toctree: generted/
+
+   compose.make_column_transformer
+
 
 :mod:`dask_ml.impute`: Imputing Missing Data
 ============================================
@@ -142,7 +182,7 @@ compatible estimators with Dask arrays.
    :toctree: generated/
    :template: class.rst
 
-   preprocessing.impute.SimpleImputer
+   impute.SimpleImputer
 
 
 :mod:`dask_ml.metrics`: Metrics

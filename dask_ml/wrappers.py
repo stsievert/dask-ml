@@ -1,4 +1,4 @@
-"""Meta-estimators for parallelizing scikit-learn."""
+"""Meta-estimators for parallelizing estimators using the scikit-learn API."""
 import logging
 
 import dask.array as da
@@ -18,7 +18,7 @@ from .metrics import check_scoring, get_scorer
 logger = logging.getLogger(__name__)
 
 
-class ParallelPostFit(sklearn.base.BaseEstimator):
+class ParallelPostFit(sklearn.base.BaseEstimator, sklearn.base.MetaEstimatorMixin):
     """Meta-estimator for parallel predict and transform.
 
     Parameters
@@ -53,7 +53,9 @@ class ParallelPostFit(sklearn.base.BaseEstimator):
 
        This class is not appropriate for parallel or distributed *training*
        on large datasets. For that, see :class:`Incremental`, which provides
-       distributed (but sequential) training.
+       distributed (but sequential) training. If you're doing distributed
+       hyperparameter optimization on larger-than-memory datasets, see
+       :class:`dask_ml.model_selection.IncrementalSearch`.
 
     This estimator does not parallelize the training step. This simply calls
     the underlying estimators's ``fit`` method called and copies over the
@@ -73,6 +75,7 @@ class ParallelPostFit(sklearn.base.BaseEstimator):
     See Also
     --------
     Incremental
+    dask_ml.model_selection.IncrementalSearch
 
     Examples
     --------
@@ -116,6 +119,32 @@ class ParallelPostFit(sklearn.base.BaseEstimator):
         self.estimator = estimator
         self.scoring = scoring
 
+    def _check_array(self, X):
+        """Validate an array for post-fit tasks.
+
+        Parameters
+        ----------
+        X : Union[Array, DataFrame]
+
+        Returns
+        -------
+        same type as 'X'
+
+        Notes
+        -----
+        The following checks are applied.
+
+        - Ensure that the array is blocked only along the samples.
+        """
+        if isinstance(X, da.Array):
+            if X.ndim == 2 and X.numblocks[1] > 1:
+                logger.debug("auto-rechunking 'X'")
+                if not np.isnan(X.chunks[0]).any():
+                    X = X.rechunk({0: "auto", 1: -1})
+                else:
+                    X = X.rechunk({1: -1})
+        return X
+
     @property
     def _postfit_estimator(self):
         # The estimator instance to use for postfit tasks like score
@@ -143,6 +172,16 @@ class ParallelPostFit(sklearn.base.BaseEstimator):
         copy_learned_attributes(result, self.estimator)
         return self
 
+    def partial_fit(self, X, y=None, **kwargs):
+        logger.info("Starting partial_fit")
+        with _timer("fit", _logger=logger):
+            result = self.estimator.partial_fit(X, y, **kwargs)
+
+        # Copy over learned attributes
+        copy_learned_attributes(result, self)
+        copy_learned_attributes(result, self.estimator)
+        return self
+
     def transform(self, X):
         """Transform block or partition-wise for dask inputs.
 
@@ -161,16 +200,17 @@ class ParallelPostFit(sklearn.base.BaseEstimator):
         -------
         transformed : array-like
         """
-        transform = self._check_method("transform")
+        self._check_method("transform")
+        X = self._check_array(X)
 
         if isinstance(X, da.Array):
-            return X.map_blocks(transform)
+            return X.map_blocks(_transform, estimator=self._postfit_estimator)
         elif isinstance(X, dd._Frame):
-            return _apply_partitionwise(X, transform)
+            return X.map_partitions(_transform, estimator=self._postfit_estimator)
         else:
-            return transform(X)
+            return _transform(X, estimator=self._postfit_estimator)
 
-    def score(self, X, y):
+    def score(self, X, y, compute=True):
         """Returns the score on the given data.
 
         Parameters
@@ -189,6 +229,8 @@ class ParallelPostFit(sklearn.base.BaseEstimator):
                 return self.estimator.score(X, y)
         """
         scoring = self.scoring
+        X = self._check_array(X)
+        y = self._check_array(y)
 
         if not scoring:
             if type(self._postfit_estimator).score == sklearn.base.RegressorMixin.score:
@@ -205,7 +247,7 @@ class ParallelPostFit(sklearn.base.BaseEstimator):
             if not dask.is_dask_collection(X) and not dask.is_dask_collection(y):
                 scorer = sklearn.metrics.get_scorer(scoring)
             else:
-                scorer = get_scorer(scoring)
+                scorer = get_scorer(scoring, compute=compute)
             return scorer(self, X, y)
         else:
             return self._postfit_estimator.score(X, y)
@@ -225,16 +267,22 @@ class ParallelPostFit(sklearn.base.BaseEstimator):
         -------
         y : array-like
         """
-        predict = self._check_method("predict")
+        self._check_method("predict")
+        X = self._check_array(X)
 
         if isinstance(X, da.Array):
-            return X.map_blocks(predict, dtype="int", drop_axis=1)
+            result = X.map_blocks(
+                _predict, dtype="int", estimator=self._postfit_estimator, drop_axis=1
+            )
+            return result
 
         elif isinstance(X, dd._Frame):
-            return _apply_partitionwise(X, predict)
+            return X.map_partitions(
+                _predict, estimator=self._postfit_estimator, meta=np.array([1])
+            )
 
         else:
-            return predict(X)
+            return _predict(X, estimator=self._postfit_estimator)
 
     def predict_proba(self, X):
         """Predict for X.
@@ -254,18 +302,22 @@ class ParallelPostFit(sklearn.base.BaseEstimator):
         -------
         y : array-like
         """
+        X = self._check_array(X)
 
-        predict_proba = self._check_method("predict_proba")
+        self._check_method("predict_proba")
 
         if isinstance(X, da.Array):
             # XXX: multiclass
             return X.map_blocks(
-                predict_proba, dtype="float", chunks=(X.chunks[0], len(self.classes_))
+                _predict_proba,
+                estimator=self._postfit_estimator,
+                dtype="float",
+                chunks=(X.chunks[0], len(self.classes_)),
             )
         elif isinstance(X, dd._Frame):
-            return _apply_partitionwise(X, predict_proba)
+            return X.map_partitions(_predict_proba, estimator=self._postfit_estimator)
         else:
-            return predict_proba(X)
+            return _predict_proba(X, estimator=self._postfit_estimator)
 
     def _check_method(self, method):
         """Check if self.estimator has 'method'.
@@ -290,6 +342,12 @@ class Incremental(ParallelPostFit):
     implementing the ``partial_fit`` API. These *incremental learners* can
     train on batches of data. This fits well with Dask's blocked data
     structures.
+
+    .. note::
+
+       This meta-estimator is not appropriate for hyperparameter optimization
+       on larger-than-memory datasets. For that, see
+       :class:dask_ml.model_selection.IncrementalSearch`.
 
     See the `list of incremental learners`_ in the scikit-learn documentation
     for a list of estimators that implement the ``partial_fit`` API. Note that
@@ -350,6 +408,7 @@ class Incremental(ParallelPostFit):
     See Also
     --------
     ParallelPostFit
+    dask_ml.model_selection.IncrementalSearch
 
     Examples
     --------
@@ -453,22 +512,13 @@ def _first_block(dask_object):
         return dask_object
 
 
-def _apply_partitionwise(X, func):
-    """Apply a prediction partition-wise to a dask.dataframe"""
-    sample = func(X._meta_nonempty)
-    if sample.ndim <= 1:
-        p = ()
-    else:
-        p = (sample.shape[1],)
+def _predict(part, estimator):
+    return estimator.predict(part)
 
-    if isinstance(sample, np.ndarray):
-        blocks = X.to_delayed()
-        arrays = [
-            da.from_delayed(
-                dask.delayed(func)(block), shape=(np.nan,) + p, dtype=sample.dtype
-            )
-            for block in blocks
-        ]
-        return da.concatenate(arrays)
-    else:
-        return X.map_partitions(func, meta=sample)
+
+def _predict_proba(part, estimator):
+    return estimator.predict_proba(part)
+
+
+def _transform(part, estimator):
+    return estimator.transform(part)
