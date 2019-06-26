@@ -203,6 +203,29 @@ def _fit(
     history = []
     start_time = time()
 
+    def _get_priorities(model_scores, num_workers=1):
+        """
+        Parameters
+        ----------
+        model_scores : Dict[Any, float]
+            Dictionary of model identities and scores
+        num_workers : int
+
+        Returns
+        -------
+        priorities
+            The ranks of the scores. This is set the models score except
+            for the bottom `num_workers` priorities (which are set to the
+            same priority).
+        """
+        models = [k for k in model_scores]
+        scores = np.array([model_scores[k] for k in models])
+        threshold = scores[np.argsort(scores)][num_workers - 1]
+        return {
+            m: s if s >= threshold else np.floor(min(scores)).astype(int)
+            for m, s in zip(models, scores)
+        }
+
     # async for future, result in seq:
     while True:
         metas = yield client.gather(new_scores)
@@ -229,28 +252,6 @@ def _fit(
         _models = {}
         _scores = {}
         _specs = {}
-
-        def _get_priorities(model_scores, num_workers=1):
-            """
-            Parameters
-            ----------
-            model_scores : Dict[Any, float]
-                Dictionary of model identities and scores
-            num_workers : int
-
-            Returns
-            -------
-            priorities
-                The ranks of the scores.
-                The bottom `num_workers` priorities are set to 0..
-            """
-            models = [k for k in model_scores]
-            scores = np.array([model_scores[k] for k in models])
-            priorities = scipy.stats.rankdata(scores)
-            priorities[priorities <= num_workers] = 0
-            priorities[priorities != 0] -= (priorities == 0).sum()
-
-            return {m: p for m, p in zip(models, priorities)}
 
         model_scores = {ident: info[ident][-1]["score"] for ident in instructions}
         priorities = _get_priorities(
