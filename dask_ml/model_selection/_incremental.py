@@ -220,12 +220,10 @@ def _fit(
         """
         models = [k for k in model_scores]
         scores = np.array([model_scores[k] for k in models])
-        threshold = scores[np.argsort(scores)][num_workers - 1]
-        min_score = float(np.floor(min(scores)).astype(int))
-        return {
-            m: s if s >= threshold else min_score
-            for m, s in zip(models, scores)
-        }
+        idx = -1 if len(scores) <= num_workers + 1 else num_workers
+        threshold = scores[np.argsort(scores)][idx]
+        min_score = int(np.floor(min(scores)))
+        return {m: s if s >= threshold else min_score for m, s in zip(models, scores)}
 
     # async for future, result in seq:
     while True:
