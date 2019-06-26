@@ -193,7 +193,7 @@ def _fit(
         _scores[ident] = score
         _specs[ident] = spec
     _models, _scores, _specs = dask.persist(
-        _models, _scores, _specs, priority={tuple(_specs.values()): -np.inf}
+        _models, _scores, _specs, priority={tuple(_specs.values()): -1}
     )
     models.update(_models)
     scores.update(_scores)
@@ -230,18 +230,41 @@ def _fit(
         _scores = {}
         _specs = {}
 
-        model_scores = [info[ident][-1]["score"] for ident in instructions]
-        score_range = max(model_scores) - min(model_scores)
+        def _get_priorities(model_scores, num_workers=1):
+            """
+            Parameters
+            ----------
+            model_scores : Dict[Any, float]
+                Dictionary of model identities and scores
+            num_workers : int
+
+            Returns
+            -------
+            priorities
+                The ranks of the scores.
+                The bottom `num_workers` priorities are set to 0..
+            """
+            models = [k for k in model_scores]
+            scores = np.array([model_scores[k] for k in models])
+            priorities = scipy.stats.rankdata(scores)
+            priorities[priorities <= num_workers] = 0
+            priorities[priorities != 0] -= (priorities == 0).sum()
+
+            return {m: p for m, p in zip(models, priorities)}
+
+        model_scores = {ident: info[ident][-1]["score"] for ident in instructions}
+        priorities = _get_priorities(
+            model_scores, num_workers=len(client.scheduler_info()["workers"])
+        )
+
         for ident, k in instructions.items():
             start = info[ident][-1]["partial_fit_calls"] + 1
+            priority = priorities[ident]
+
             if k:
                 k -= 1
                 model = speculative.pop(ident)
-                priority = info[ident][-1]["score"]
                 for i in range(k):
-                    # Mix this model at this iteration with 10% above, 10% below
-                    priority = info[ident][-1]["score"]
-                    priority += (rng.rand() - 0.5) * score_range / 5
                     X_future, y_future = get_futures(start + i)
                     model = d_partial_fit(
                         model, X_future, y_future, fit_params, priority=priority
@@ -256,7 +279,7 @@ def _fit(
                 _specs[ident] = spec
 
         _models2, _scores2, _specs2 = dask.persist(
-            _models, _scores, _specs, priority={tuple(_specs.values()): -np.inf}
+            _models, _scores, _specs, priority={tuple(_specs.values()): -1}
         )
         _models2 = {
             k: v if isinstance(v, Future) else list(v.dask.values())[0]
