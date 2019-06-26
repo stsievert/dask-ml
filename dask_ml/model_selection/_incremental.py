@@ -193,7 +193,7 @@ def _fit(
         _scores[ident] = score
         _specs[ident] = spec
     _models, _scores, _specs = dask.persist(
-        _models, _scores, _specs, priority={tuple(_specs.values()): -1}
+        _models, _scores, _specs, priority={tuple(_specs.values()): -np.inf}
     )
     models.update(_models)
     scores.update(_scores)
@@ -221,8 +221,9 @@ def _fit(
         models = [k for k in model_scores]
         scores = np.array([model_scores[k] for k in models])
         threshold = scores[np.argsort(scores)][num_workers - 1]
+        min_score = float(np.floor(min(scores)).astype(int))
         return {
-            m: s if s >= threshold else np.floor(min(scores)).astype(int)
+            m: s if s >= threshold else min_score
             for m, s in zip(models, scores)
         }
 
@@ -280,7 +281,7 @@ def _fit(
                 _specs[ident] = spec
 
         _models2, _scores2, _specs2 = dask.persist(
-            _models, _scores, _specs, priority={tuple(_specs.values()): -1}
+            _models, _scores, _specs, priority={tuple(_specs.values()): -np.inf}
         )
         _models2 = {
             k: v if isinstance(v, Future) else list(v.dask.values())[0]
