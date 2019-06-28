@@ -735,6 +735,13 @@ def test_search_basic_patience(c, s, a, b):
     hist = pd.DataFrame(search.history_)
     assert hist.partial_fit_calls.max() == patience + 2
 
+    for tol in [None, np.nan]:
+        search = IncrementalSearchCV(
+            model, params, max_iter=max_iter, tol=tol, patience=1, decay_rate=0
+        )
+        yield search.fit(X, y, classes=[0, 1])
+        assert search.history_
+
 
 @gen_cluster(client=True)
 def test_search_invalid_patience(c, s, a, b):

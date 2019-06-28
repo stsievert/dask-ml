@@ -914,8 +914,8 @@ class IncrementalSearchCV(BaseIncrementalSearchCV):
         if (
             not isinstance(self.patience, bool)
             and self.patience <= 1
-            and not np.isnan(self.tol)
             and self.tol is not None
+            and not np.isnan(self.tol)
         ):
             raise ValueError(
                 "patience={}<=1 will always detect a plateau. "
