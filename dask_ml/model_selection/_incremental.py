@@ -71,19 +71,19 @@ def _partial_fit(model_and_meta, X, y, fit_params):
             The estimator with the highest validation score in the final
             round.
     """
-    with log_errors():
-        start = time()
-        model, meta = model_and_meta
+    #  with log_errors():
+    start = time()
+    model, meta = model_and_meta
 
-        if len(X):
-            model = deepcopy(model)
-            model.partial_fit(X, y, **(fit_params or {}))
+    if len(X):
+        model = deepcopy(model)
+        model.partial_fit(X, y, **(fit_params or {}))
 
-        meta = dict(meta)
-        meta["partial_fit_calls"] += 1
-        meta["partial_fit_time"] = time() - start
+    meta = dict(meta)
+    meta["partial_fit_calls"] += 1
+    meta["partial_fit_time"] = time() - start
 
-        return model, meta
+    return model, meta
 
 
 def _score(model_and_meta, X, y, scorer):
@@ -101,9 +101,9 @@ def _score(model_and_meta, X, y, scorer):
 
 def _create_model(model, ident, **params):
     """ Create a model by cloning and then setting params """
-    with log_errors(pdb=True):
-        model = clone(model).set_params(**params)
-        return model, {"model_id": ident, "params": params, "partial_fit_calls": 0}
+    #  with log_errors(pdb=True):
+    model = clone(model).set_params(**params)
+    return model, {"model_id": ident, "params": params, "partial_fit_calls": 0}
 
 
 @gen.coroutine
@@ -919,10 +919,13 @@ class IncrementalSearchCV(BaseIncrementalSearchCV):
                 "not patience={} of type {}"
             )
             raise ValueError(msg.format(self.patience, type(self.patience)))
-        if not isinstance(self.patience, bool) and self.patience <= 1:
+        if not isinstance(self.patience, bool) and self.patience <= 1 and not np.isnan(self.tol) and self.tol is not None:
             raise ValueError(
                 "patience={}<=1 will always detect a plateau. "
-                "this, set\n\n    patience >= 2"
+                "this, set"
+                "\n"
+                "\n    * patience >= 2"
+                "\n    * tol = None or tol = np.nan"
             )
 
         calls = {k: v[-1]["partial_fit_calls"] for k, v in info.items()}
