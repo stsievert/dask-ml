@@ -263,14 +263,10 @@ def _fit(
                 model = speculative.pop(ident)
                 for i in range(k):
                     X_future, y_future = get_futures(start + i)
-                    model = d_partial_fit(
-                        model, X_future, y_future, fit_params
-                    )
+                    model = d_partial_fit(model, X_future, y_future, fit_params)
                 score = d_score(model, X_test, y_test, scorer)
                 X_future, y_future = get_futures(start + k)
-                spec = d_partial_fit(
-                    model, X_future, y_future, fit_params
-                )
+                spec = d_partial_fit(model, X_future, y_future, fit_params)
                 _models[ident] = model
                 _scores[ident] = score
                 _specs[ident] = spec
@@ -915,7 +911,12 @@ class IncrementalSearchCV(BaseIncrementalSearchCV):
                 "not patience={} of type {}"
             )
             raise ValueError(msg.format(self.patience, type(self.patience)))
-        if not isinstance(self.patience, bool) and self.patience <= 1 and not np.isnan(self.tol) and self.tol is not None:
+        if (
+            not isinstance(self.patience, bool)
+            and self.patience <= 1
+            and not np.isnan(self.tol)
+            and self.tol is not None
+        ):
             raise ValueError(
                 "patience={}<=1 will always detect a plateau. "
                 "this, set"
@@ -1004,7 +1005,7 @@ class IncrementalSearchCV(BaseIncrementalSearchCV):
                     if current_calls - h["partial_fit_calls"] <= self.patience
                 ]
                 diffs = np.array(plateau[1:]) - plateau[0]
-                if (self.tol is not None) and diffs.max() <= self.tol:
+                if len(diffs) and (self.tol is not None) and diffs.max() <= self.tol:
                     out[k] = 0
                 else:
                     out[k] = steps
