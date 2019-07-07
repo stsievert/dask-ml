@@ -179,8 +179,11 @@ def _fit(
     _scores = {}
     _specs = {}
 
-    d_partial_fit = dask.delayed(_partial_fit)
-    d_score = dask.delayed(_score)
+    def d_partial_fit(*args, **kwargs):
+        return client.submit(_partial_fit, *args, **kwargs)
+
+    def d_score(*args, **kwargs):
+        return client.submit(_score, *args, **kwargs)
 
     for ident, model in models.items():
         model = d_partial_fit(model, X_future, y_future, fit_params)
@@ -190,11 +193,8 @@ def _fit(
         _scores[ident] = score
         _specs[ident] = spec
     _models, _scores, _specs = dask.persist(
-        _models, _scores, _specs, priority={tuple(_specs.values()): -1}
+        _models, _scores, _specs, priority={tuple(_specs.values()): -np.inf}
     )
-    _models = {k: list(v.dask.values())[0] for k, v in _models.items()}
-    _scores = {k: list(v.dask.values())[0] for k, v in _scores.items()}
-    _specs = {k: list(v.dask.values())[0] for k, v in _specs.items()}
     models.update(_models)
     scores.update(_scores)
     speculative = _specs
@@ -202,6 +202,31 @@ def _fit(
     new_scores = list(_scores.values())
     history = []
     start_time = time()
+
+    def _get_priorities(model_scores, num_workers=1):
+        """
+        Parameters
+        ----------
+        model_scores : Dict[Any, float]
+            Dictionary of model identities and scores
+        num_workers : int
+
+        Returns
+        -------
+        priorities
+            The ranks of the scores. This is set the models score except
+            for the bottom `num_workers` priorities (which are set to the
+            same priority).
+        """
+        models = [k for k in model_scores]
+        scores = np.array([model_scores[k] for k in models])
+        idx = -1 if len(scores) <= num_workers else num_workers - 1
+        threshold = np.round(scores[np.argsort(scores)][idx], 2)
+        low_scores = [s for s in scores if s <= threshold]
+        return {
+            m: s if s > threshold else np.median(low_scores)
+            for m, s in zip(models, scores)
+        }
 
     # async for future, result in seq:
     while True:
@@ -230,34 +255,39 @@ def _fit(
         _scores = {}
         _specs = {}
 
+        model_scores = {ident: info[ident][-1]["score"] for ident in instructions}
+        priorities = _get_priorities(
+            model_scores, num_workers=len(client.scheduler_info()["workers"])
+        )
+
         for ident, k in instructions.items():
             start = info[ident][-1]["partial_fit_calls"] + 1
+            priority = priorities[ident]
+
             if k:
                 k -= 1
                 model = speculative.pop(ident)
                 for i in range(k):
                     X_future, y_future = get_futures(start + i)
                     model = d_partial_fit(
-                        model, X_future, y_future, fit_params
+                        model, X_future, y_future, fit_params, priority=priority
                     )
-                score = d_score(model, X_test, y_test, scorer)
+                score = d_score(model, X_test, y_test, scorer, priority=priority)
                 X_future, y_future = get_futures(start + k)
                 spec = d_partial_fit(
-                    model, X_future, y_future, fit_params
+                    model, X_future, y_future, fit_params, priority=priority
                 )
                 _models[ident] = model
                 _scores[ident] = score
                 _specs[ident] = spec
 
         _models2, _scores2, _specs2 = dask.persist(
-            _models, _scores, _specs, priority={tuple(_specs.values()): -1}
+            _models, _scores, _specs, priority={tuple(_specs.values()): -np.inf}
         )
         _models2 = {
             k: v if isinstance(v, Future) else list(v.dask.values())[0]
             for k, v in _models2.items()
         }
-        _scores2 = {k: list(v.dask.values())[0] for k, v in _scores2.items()}
-        _specs2 = {k: list(v.dask.values())[0] for k, v in _specs2.items()}
 
         models.update(_models2)
         scores.update(_scores2)
