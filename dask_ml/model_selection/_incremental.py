@@ -5,7 +5,6 @@ import logging
 import operator
 import sys
 from collections import defaultdict, namedtuple
-from copy import deepcopy
 from time import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from warnings import warn
@@ -98,7 +97,6 @@ def _partial_fit(
         model, meta = model_and_meta
 
         if len(X):
-            model = deepcopy(model)
             model.partial_fit(X, y, **(fit_params or {}))
 
         meta = dict(meta)
